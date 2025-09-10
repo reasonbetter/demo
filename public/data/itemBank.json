@@ -1,0 +1,169 @@
+{
+  "schema_features": {
+    "C6_bias_direction": { "required_moves": ["access_selection_reason"] },
+    "C8_temporality": { "required_moves": ["baseline_fairness_reason"] },
+    "C2_detection": { "required_moves": ["detection_reason"] }
+  },
+  "items": [
+    {
+      "item_id": "C1_001",
+      "schema_id": "C1_conf_gen",
+      "family": "C1",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.0,
+      "band": "core",
+      "text": "A study finds that kids who take music lessons have higher math scores.\nGive two different reasons—other than “music helps math”—why this link might be true. (A few words each.)"
+    },
+    {
+      "item_id": "C1_002",
+      "schema_id": "C1_conf_gen",
+      "family": "C1",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.0,
+      "band": "core",
+      "text": "A study finds that kids who read for fun every day have bigger vocabularies.\nGive two different reasons—other than “reading grows vocabulary”—why this link might be true. (A few words each.)"
+    },
+    {
+      "item_id": "C2I_001",
+      "schema_id": "C2_indication",
+      "family": "C2",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.1,
+      "band": "core",
+      "text": "A hospital review shows patients who got a new, expensive heart medicine had worse survival than those on the old medicine.\nName one reason the patients who got the new medicine might have been different from the start. (A few words.)"
+    },
+    {
+      "item_id": "C2A_001",
+      "schema_id": "C2_access",
+      "family": "C2",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.1,
+      "band": "core",
+      "text": "A city offered small‑business grants, but the only way to apply was through a long, confusing online form. Businesses that got grants later showed bigger sales gains.\nName one reason those businesses might have been different from the start. (A few words.)"
+    },
+    {
+      "item_id": "C6_001",
+      "schema_id": "C6_bias_direction",
+      "family": "C6",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.2,
+      "band": "core",
+      "text": "A high school offers an optional SAT prep class. Students who take it score higher. The class costs $500.\nDoes this cost make the class look More or Less effective than it really is? (Answer one word: More or Less.)"
+    },
+    {
+      "item_id": "C6_002",
+      "schema_id": "C6_bias_direction",
+      "family": "C6",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.2,
+      "band": "core",
+      "text": "A job program is optional and asks people to pay $300 to join. Those who join get promotions more often.\nDoes this fee make the program look More or Less effective than it really is? (Answer one word: More or Less.)"
+    },
+    {
+      "item_id": "C7A_001",
+      "schema_id": "C7_reverse",
+      "family": "C7A",
+      "coverage_tag": "complexity",
+      "a": 1.0,
+      "b": 0.2,
+      "band": "core",
+      "text": "A study finds people with high anxiety also have poor sleep.\nAside from “anxiety causes poor sleep,” or “a third thing causes both,” what is another way these could be linked? (A few words.)"
+    },
+    {
+      "item_id": "C7C_001",
+      "schema_id": "C7_feedback",
+      "family": "C7C",
+      "coverage_tag": "complexity",
+      "a": 1.0,
+      "b": 0.3,
+      "band": "core",
+      "text": "Many students who feel very anxious also procrastinate (delay starting work).\nIf a student is anxious and starts to procrastinate on a big assignment, what likely happens to their anxiety and their procrastination over the next week? (One or two sentences.)"
+    },
+    {
+      "item_id": "C8_001",
+      "schema_id": "C8_temporality",
+      "family": "C8",
+      "coverage_tag": "temporality",
+      "a": 1.0,
+      "b": 0.2,
+      "band": "core",
+      "text": "A city compares two job‑training programs. People chose which one to join. To make a fair comparison, which is more important to make the same between the groups:\n1) their years of work experience before the program,\n2) the number of job applications they sent during the program, or\n3) BOTH?\nAnswer 1, 2, or BOTH, and give a five‑word “why.”"
+    },
+    {
+      "item_id": "C8_002",
+      "schema_id": "C8_temporality",
+      "family": "C8",
+      "coverage_tag": "temporality",
+      "a": 1.0,
+      "b": 0.2,
+      "band": "core",
+      "text": "A study compares a diet‑tracking app to no app. People chose whether to use the app. To make a fair comparison, which is more important to make the same between the groups:\n1) their starting weight before using the app,\n2) the number of meals they logged during the study, or\n3) BOTH?\nAnswer 1, 2, or BOTH, and give a five‑word “why.”"
+    },
+    {
+      "item_id": "C7A_002",
+      "schema_id": "C7_reverse",
+      "family": "C7A",
+      "coverage_tag": "complexity",
+      "a": 1.0,
+      "b": 0.2,
+      "band": "core",
+      "text": "A survey finds that siblings who spend more time reading have better grades.\nAside from a third thing causing both, give two different stories for why these might be linked. (A few words each.)"
+    },
+    {
+      "item_id": "C1_003",
+      "schema_id": "C1_conf_gen",
+      "family": "C1",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.0,
+      "band": "core",
+      "text": "People in higher‑income neighborhoods recycle more.\nAside from “income causes recycling” or “recycling causes income,” name one third thing that could cause both. (A few words.)"
+    },
+    {
+      "item_id": "CX_001",
+      "schema_id": "CX_root_cause",
+      "family": "CX",
+      "coverage_tag": "complexity",
+      "a": 1.0,
+      "b": 0.4,
+      "band": "core",
+      "text": "A child got the wrong medicine because a nurse misread a doctor’s messy handwriting.\nWhat is the most effective way for the hospital to prevent this kind of error in the future? (A few words.)"
+    },
+    {
+      "item_id": "CX_002",
+      "schema_id": "CX_root_cause",
+      "family": "CX",
+      "coverage_tag": "complexity",
+      "a": 1.0,
+      "b": 0.4,
+      "band": "core",
+      "text": "A serious software bug reached customers because a junior developer made a mistake.\nWhat is the most effective way for the company to prevent this in the future? (A few words.)"
+    },
+    {
+      "item_id": "CEX_001",
+      "schema_id": "CEX_nonlin",
+      "family": "CEX",
+      "coverage_tag": "complexity",
+      "a": 1.0,
+      "b": 0.3,
+      "band": "core",
+      "text": "A pain pill study shows: 1 pill lowers pain by 2 points; 2 pills lower pain by 4 points.\nA patient asks, “If I take 10 pills, will my pain drop by 20 points?”\nWhat should the doctor say? (One or two sentences.)"
+    },
+    {
+      "item_id": "C2D_001",
+      "schema_id": "C2_detection",
+      "family": "C2",
+      "coverage_tag": "confounding",
+      "a": 1.0,
+      "b": 0.1,
+      "band": "core",
+      "text": "Doctors find a certain knee injury more often in professional soccer players than in casual runners.\nWhy might the diagnosis rate be higher in pros even if the true injury rate is the same? (A few words.)"
+    }
+  ]
+}

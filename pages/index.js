@@ -92,6 +92,12 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
       return "One sentence: name a condition where your conclusion would fail.";
     return "";
   }
+// Prefer server-authored probe text; fall back to canned map
+function probeTextFromServer(data) {
+  const t = (data?.probe_text || "").trim();
+  if (t.length > 0) return t;
+  return probePromptFor(data?.probe_type);
+}
 
   async function onSubmit(e) {
     e.preventDefault();

@@ -24,7 +24,7 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model,
-        response_format: { type: 'json_object' },
+        text_format: { type: 'json_object' },
         max_output_tokens: 300, // Responses API uses this field
         input: [
           { role: 'system', content: AJ_SYSTEM },

@@ -20,8 +20,6 @@ export default async function handler(req, res) {
 
 const AJ_SYSTEM = `You are the Adaptive Judge.
 
-const AJ_SYSTEM = `You are the Adaptive Judge.
-
 TASK 1 — MEASUREMENT (strict JSON):
 Return a JSON object with keys:
 - labels: probabilities over {"Correct&Complete","Correct_Missing","Correct_Flawed","Partial","Incorrect","Novel"}.

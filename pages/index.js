@@ -1,5 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
 import bank from "../public/data/itemBank.json";
+function HistoryRow({ item }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="historyItem">
+      <div>
+        <strong>{item.item_id}</strong> — {item.label}
+        {item.probe_type !== "None" ? ` (probe: ${item.probe_type})` : ""}
+        <button className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={() => setOpen(!open)}>
+          {open ? "Hide JSON" : "Show JSON"}
+        </button>
+      </div>
+      <div className="muted">{item.text}</div>
+      <div><em>Ans:</em> {item.answer}</div>
+      {item.probe_answer && <div><em>Probe:</em> {item.probe_answer}</div>}
+
+      {open && (
+        <div className="debug" style={{ marginTop: 8 }}>
+          <div><strong>AJ (item):</strong></div>
+          <pre>{JSON.stringify(item.aj_json, null, 2)}</pre>
+          <div><strong>Controller (item):</strong></div>
+          <pre>{JSON.stringify(item.turn_json, null, 2)}</pre>
+
+          {item.probe_answer && (
+            <>
+              <div><strong>AJ (probe):</strong></div>
+              <pre>{JSON.stringify(item.probe_aj_json, null, 2)}</pre>
+              <div><strong>Controller (merge):</strong></div>
+              <pre>{JSON.stringify(item.merged_turn_json, null, 2)}</pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const [sessionId, setSessionId] = useState(null);
@@ -129,17 +164,19 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
     const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
 
     setHistory((h) => [
-      ...h,
-      {
-        item_id: currentItem.item_id,
-        text: currentItem.text,
-        answer: input,
-        label: turn.final_label,
-        probe_type: turn.probe_type,
-        probe_text: (turn.probe_text || ""),
-        trace: turn.trace
-      }
-    ]);
+   ...h,
+   {
+     item_id: currentItem.item_id,
+     text: currentItem.text,
+     answer: input,
+     label: turn.final_label,
+     probe_type: turn.probe_type,
+     probe_text: (turn.probe_text || ""),
+     trace: turn.trace,
+     aj_json: aj,          // ← store AJ measurement
+     turn_json: turn       // ← store controller payload
+   }
+ ]);
     setLog((lines) => [...lines, ...turn.trace, "—"]);
     setTheta({ mean: Number(turn.theta_mean.toFixed(2)), se: Number(Math.sqrt(turn.theta_var).toFixed(2)) });
 
@@ -186,11 +223,17 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
     setTheta({ mean: Number(merged.theta_mean.toFixed(2)), se: Number(Math.sqrt(merged.theta_var).toFixed(2)) });
     setCurrentId(merged.next_item_id || currentItem.item_id);
 
-    setHistory((h) => {
-      const last = h[h.length - 1];
-      const updated = { ...last, probe_answer: probeInput, probe_label: awaitingProbe.probeType };
-      return [...h.slice(0, -1), updated];
-    });
+ setHistory((h) => {
+   const last = h[h.length - 1];
+   const updated = {
+     ...last,
+     probe_answer: probeInput,
+    probe_label: awaitingProbe.probeType,
+    probe_aj_json: tw,        // ← AJ result on the probe reply
+     merged_turn_json: merged  // ← controller payload after merge
+   };
+   return [...h.slice(0, -1), updated];
+ });
 
     await logEvent("probe_answered", {
       item_id: currentItem.item_id,
@@ -288,14 +331,9 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
 
       <section style={{ marginTop: 24 }}>
         <h3>History</h3>
-        {history.map((h) => (
-          <div key={h.item_id} className="historyItem">
-            <div><strong>{h.item_id}</strong> — {h.label} {h.probe_type !== "None" ? `(probe: ${h.probe_type})` : ""}</div>
-            <div className="muted">{h.text}</div>
-            <div><em>Ans:</em> {h.answer}</div>
-            {h.probe_answer && <div><em>Probe:</em> {h.probe_answer}</div>}
-          </div>
-        ))}
+        + {history.map((h, i) => (
+   <HistoryRow key={h.item_id + ':' + i} item={h} />
+ ))}
       </section>
     </div>
   );

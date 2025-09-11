@@ -248,8 +248,9 @@ export default function Home() {
               className="textarea"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Your answer (few words or one sentence)"
+              placeholder="Your answer (a few words or one sentence)"
               rows={2}
+              autoFocus
             />
             <div className="row" style={{ marginTop: 10 }}>
               <button type="submit" className="btn" disabled={pending}>Submit</button>

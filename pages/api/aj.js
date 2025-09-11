@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-const MODEL = process.env.OPENAI_MODEL || "gpt-5-mini"; 
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini"; 
 
 export default async function handler(req, res) {
   try {

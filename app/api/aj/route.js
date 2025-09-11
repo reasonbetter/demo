@@ -1,13 +1,4 @@
-// app/api/aj/route.js
 export const runtime = 'edge';
-// export const preferredRegion = 'iad1'; // optional
-
-export async function GET() {
-  return new Response(JSON.stringify({ ok: true, method: 'GET' }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" }
-  });
-}
 
 export async function POST(req) {
   try {
@@ -20,6 +11,8 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), { status: 500 });
     }
 
+   import { AJ_SYSTEM } from "../../../lib/prompts/aj.system.js"
+    
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -29,9 +22,10 @@ export async function POST(req) {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || "gpt-5-mini",
         response_format: { type: "json_object" },
-        max_tokens: 300,
+        // IMPORTANT: use max_completion_tokens (not max_tokens) for this model family
+        max_completion_tokens: 300,
         messages: [
-          { role: "system", content: /* import your AJ_SYSTEM string here */ "..." },
+          { role: "system", content: AJ_SYSTEM },
           { role: "user", content: JSON.stringify({ stimulus: item.text, user_response: userResponse, features: features || {} }) }
         ]
       })
@@ -39,16 +33,21 @@ export async function POST(req) {
 
     if (!r.ok) {
       const errText = await r.text();
-      return new Response(JSON.stringify({ error: "OpenAI call failed", details: errText.slice(0,800) }), { status: 502 });
+      return new Response(JSON.stringify({ error: "OpenAI call failed", details: errText.slice(0, 800) }), { status: 502 });
     }
 
     const data = await r.json();
     const text = data?.choices?.[0]?.message?.content || "";
     let payload;
     try { payload = JSON.parse(text); }
-    catch { return new Response(JSON.stringify({ error: "Model returned non-JSON", sample: text.slice(0,800) }), { status: 502 }); }
+    catch {
+      return new Response(JSON.stringify({ error: "Model returned non-JSON", sample: text.slice(0, 800) }), { status: 502 });
+    }
 
-    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" }});
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (err) {
     return new Response(JSON.stringify({ error: "AJ route error", details: String(err) }), { status: 500 });
   }

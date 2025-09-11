@@ -1,55 +1,87 @@
 import OpenAI from "openai";
-const MODEL = process.env.OPENAI_MODEL || "gpt-5-mini";
+
+const MODEL = process.env.OPENAI_MODEL || "gpt-5-mini"; 
 
 export default async function handler(req, res) {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
     }
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
 
     const { item, userResponse, features } = req.body || {};
     if (!item?.text || typeof userResponse !== "string") {
       return res.status(400).json({ error: "Bad request: missing item.text or userResponse" });
     }
 
-    const AJ_SYSTEM = `You are the Adaptive Judge. Measure the quality of a user's answer. Return JSON only.
-- Score content only; ignore grammar/dialect/style.
-- For items: labels={Correct&Complete, Correct_Missing, Correct_Flawed, Partial, Incorrect, Novel}.
-- For TWs (features.tw_type present), use tw_labels according to tw_type (Mechanism/Alternative/Boundary).
-- pitfalls/process_moves: probabilities 0–1.
-- calibrations: include p_correct (items only) and confidence 0–1.
-- extractions: direction_word ("More"/"Less"/null) and up to two key_phrases.
-- Output JSON only.`;
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const userMsg = `Stimulus:\n${item.text}\n\nUser response:\n${userResponse}\n\nFeatures JSON:\n${JSON.stringify(features || {})}`;
+    const AJ_SYSTEM = `You are the Adaptive Judge.
+Return JSON ONLY with fields:
+- labels: object of probabilities over { "Correct&Complete", "Correct_Missing", "Correct_Flawed", "Partial", "Incorrect", "Novel" }
+- pitfalls: object of probabilities
+- process_moves: object of probabilities
+- calibrations: { p_correct: number, confidence: number }
+- extractions: { direction_word: "More"|"Less"|null, key_phrases: string[] }`;
 
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      temperature: 0,
-      messages: [
-        { role: "system", content: AJ_SYSTEM },
-        { role: "user", content: userMsg }
-      ],
-      response_format: { type: "json_object" }
-    });
+    const userMsg = {
+      stimulus: item.text,
+      user_response: userResponse,
+      features: features || {}
+    };
 
-    let text = completion.choices?.[0]?.message?.content || "{}";
-    let payload;
-    try { payload = JSON.parse(text); }
-    catch {
-      // If the model forgot to emit JSON, wrap as Novel
-      payload = {
-        labels: { Novel: 1.0 },
-        pitfalls: {},
-        process_moves: {},
-        calibrations: { p_correct: 0.0, confidence: 0.2 },
-        extractions: { direction_word: null, key_phrases: [] }
-      };
+    // Try Responses API first (new SDK), fall back to Chat Completions if needed
+    let text;
+    try {
+      if (typeof client.responses?.create === "function") {
+        const r = await client.responses.create({
+          model: MODEL,
+          input: [
+            { role: "system", content: AJ_SYSTEM },
+            { role: "user", content: JSON.stringify(userMsg) }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0
+        });
+        text = r.output_text;
+      } else {
+        const r = await client.chat.completions.create({
+          model: MODEL,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: AJ_SYSTEM },
+            { role: "user", content: JSON.stringify(userMsg) }
+          ]
+        });
+        text = r?.choices?.[0]?.message?.content;
+      }
+    } catch (apiErr) {
+      return res.status(502).json({
+        error: "OpenAI call failed",
+        details: apiErr?.message || String(apiErr)
+      });
     }
+
+    if (!text || typeof text !== "string") {
+      return res.status(502).json({ error: "Empty response from model" });
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return res.status(502).json({
+        error: "Model returned non-JSON",
+        sample: text.slice(0, 800)
+      });
+    }
+
     return res.status(200).json(payload);
   } catch (err) {
-    console.error("AJ error:", err);
-    return res.status(500).json({ error: "AJ error", details: String(err) });
+    console.error("AJ route error:", err);
+    return res.status(500).json({ error: "AJ route error", details: String(err) });
   }
 }

@@ -95,8 +95,8 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
 // Prefer server-authored probe text; fall back to canned map
 function probeTextFromServer(data) {
   const t = (data?.probe_text || "").trim();
-  if (t.length > 0) return t;
-  return probePromptFor(data?.probe_type);
+  if (t.length > 0) return t;            // ← use AJ/orchestrator-authored sentence
+  return probePromptFor(data?.probe_type); // ← fallback to your old map
 }
 
   async function onSubmit(e) {

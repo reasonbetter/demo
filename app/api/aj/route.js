@@ -29,7 +29,8 @@ export async function POST(req) {
       body: JSON.stringify({
         model,
         text: { format: { type: 'json_object' } },
-        max_output_tokens: 300,        // Responses API key
+        max_output_tokens: 700,        // Responses API key
+        reasoning: { effort: "low" },
         input: [
           {
             role: 'system',
@@ -55,46 +56,52 @@ export async function POST(req) {
     });
 
     const data = await r.json();
-    if (!r.ok) {
-      return new Response(
-        JSON.stringify({ error: 'OpenAI call failed', details: JSON.stringify(data).slice(0, 800) }),
-        { status: 502 }
-      );
-    }
 
-    // Prefer convenience field; fall back to first output_text block
-    const textOut =
-      data?.output_text ??
-      (Array.isArray(data?.output)
-        ? (data.output[0]?.content?.find?.(b => b.type === 'output_text')?.text ||
-           data.output[0]?.content?.[0]?.text)
-        : '');
-
-    if (!textOut) {
-      return new Response(
-        JSON.stringify({ error: 'Model returned empty output_text', sample: JSON.stringify(data).slice(0, 800) }),
-        { status: 502 }
-      );
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(textOut);
-    } catch {
-      return new Response(
-        JSON.stringify({ error: 'Model returned non-JSON', sample: textOut.slice(0, 800) }),
-        { status: 502 }
-      );
-    }
-
-    return new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: 'AJ route error', details: String(err) }), { status: 500 });
-  }
+// 1) If the run didn’t complete, return a clear 502 with details
+if (data?.status && data.status !== "completed") {
+  return new Response(
+    JSON.stringify({
+      error: "Model returned incomplete response",
+      status: data.status,
+      incomplete_details: data.incomplete_details || null
+    }),
+    { status: 502 }
+  );
 }
+
+// 2) Robustly extract the text payload
+let text = data?.output_text || "";
+if (!text && Array.isArray(data?.output)) {
+  const msg = data.output.find(o => o.type === "message");
+  const seg = msg?.content?.find(c => c.type === "output_text");
+  text = seg?.text || "";
+}
+
+if (!text) {
+  return new Response(
+    JSON.stringify({
+      error: "Model returned empty output_text",
+      sample: JSON.stringify(data).slice(0, 500)
+    }),
+    { status: 502 }
+  );
+}
+
+let payload;
+try {
+  payload = JSON.parse(text);
+} catch {
+  return new Response(
+    JSON.stringify({ error: "Model returned non-JSON", sample: text.slice(0, 800) }),
+    { status: 502 }
+  );
+}
+
+return new Response(JSON.stringify(payload), {
+  status: 200,
+  headers: { "Content-Type": "application/json" }
+});
+
 
 export async function GET() {
   return new Response(JSON.stringify({ ok: true }), {

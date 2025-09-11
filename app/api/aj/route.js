@@ -29,7 +29,7 @@ export async function POST(req) {
       body: JSON.stringify({
         model,
         text: { format: { type: 'json_object' } },
-        max_output_tokens: 700,        // Responses API key
+        max_output_tokens: 1700,        // Responses API key
         reasoning: { effort: "low" },
         input: [
           {

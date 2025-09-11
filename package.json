@@ -7,7 +7,7 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
-    "@vercel/blob": "^1.1.1",
+    "@neondatabase/serverless": "^0.10.3",   // or latest
     "next": "14.2.4",
     "openai": "4.47.2",
     "react": "18.2.0",

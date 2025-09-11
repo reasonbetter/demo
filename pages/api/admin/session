@@ -1,0 +1,19 @@
+export const config = { runtime: 'nodejs' };
+import { sql } from "../../../lib/db.js";
+
+export default async function handler(req, res) {
+  try {
+    const { id } = req.query || {};
+    if (!id) return res.status(400).json({ error: 'missing id' });
+
+    const s = await sql`SELECT * FROM sessions WHERE id=${id}`;
+    const t = await sql`
+      SELECT id, item_id, label, probe_type, probe_text, theta_mean_after, created_at, aj_json, tw_json
+      FROM turns WHERE session_id=${id}
+      ORDER BY id ASC`;
+
+    res.status(200).json({ session: s.rows[0] || null, turns: t.rows });
+  } catch (e) {
+    res.status(500).json({ error: 'session fetch failed', details: String(e) });
+  }
+}

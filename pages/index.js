@@ -2,19 +2,59 @@ import { useEffect, useMemo, useState } from "react";
 import bank from "../public/data/itemBank.json";
 
 export default function Home() {
+  const [sessionId, setSessionId] = useState(null);
+  const [userTag, setUserTag] = useState("");
   const [currentId, setCurrentId] = useState(bank.items[0].item_id);
   const [input, setInput] = useState("");
   const [probeInput, setProbeInput] = useState("");
   const [log, setLog] = useState([]);
   const [history, setHistory] = useState([]);
-  const [awaitingProbe, setAwaitingProbe] = useState(null); // { probeType, prompt, pending }
+  const [awaitingProbe, setAwaitingProbe] = useState(null);
   const [theta, setTheta] = useState({ mean: 0, se: Math.sqrt(1.5) });
+  const [showDebug, setShowDebug] = useState(false);
+  const [pending, setPending] = useState(false);
 
   const currentItem = useMemo(
     () => bank.items.find((it) => it.item_id === currentId),
     [currentId]
   );
 
+  // --- helpers ----------------------------------------------------------------
+  function probePromptFor(type) {
+    if (type === "Mechanism")
+      return "One sentence: briefly explain the mechanism that could make this result misleading.";
+    if (type === "Alternative")
+      return "In a few words: give one different explanation for the link (not the one you already mentioned).";
+    if (type === "Boundary")
+      return "One sentence: name a condition where your conclusion would fail.";
+    if (type === "Completion")
+      return "Can you give one more different reason?";
+    if (type === "Clarify")
+      return "In one sentence: clarify what you meant.";
+    return "";
+  }
+  function probeTextFromServer(turnPayload) {
+    const t = (turnPayload?.probe_text || "").trim();
+    return t.length > 0 ? t : probePromptFor(turnPayload?.probe_type);
+  }
+  async function logEvent(type, payload) {
+    const entry = {
+      ts: new Date().toISOString(),
+      session_id: sessionId,
+      user_tag: userTag || null,
+      type,
+      ...payload
+    };
+    try { await fetch("/api/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry) }); } catch {}
+    try {
+      const key = "rb_local_logs";
+      const arr = JSON.parse(localStorage.getItem(key) || "[]");
+      arr.push(entry);
+      localStorage.setItem(key, JSON.stringify(arr).slice(0, 1_000_000));
+    } catch {}
+  }
+
+  // --- API calls --------------------------------------------------------------
   async function callAJ({ item, userResponse, twType = null }) {
     try {
       const res = await fetch("/api/aj", {
@@ -36,7 +76,6 @@ export default function Home() {
           }
         })
       });
-
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`AJ HTTP ${res.status}: ${text.slice(0, 800)}`);
@@ -44,7 +83,6 @@ export default function Home() {
       return await res.json();
     } catch (e) {
       alert(`AJ error: ${e.message}`);
-      // Safe fallback so UI continues
       return {
         labels: { Novel: 1.0 },
         pitfalls: {},
@@ -70,7 +108,6 @@ export default function Home() {
       return await res.json();
     } catch (e) {
       alert(`Controller error: ${e.message}`);
-      // Minimal no-op result so UI stays responsive
       const nextSafe =
         bank.items.find((it) => it.item_id !== itemId)?.item_id || itemId;
       return {
@@ -86,42 +123,15 @@ export default function Home() {
     }
   }
 
-  // Canned fallbacks for probes (used only if server didn't supply text)
-  function probePromptFor(type) {
-    if (type === "Mechanism")
-      return "One sentence: briefly explain the mechanism that could make this result misleading.";
-    if (type === "Alternative")
-      return "In a few words: give one different explanation for the link (not the one you already mentioned).";
-    if (type === "Boundary")
-      return "One sentence: name a condition where your conclusion would fail.";
-    if (type === "Completion")
-      return "Can you give one more different reason?";
-    if (type === "Clarify")
-      return "In one sentence: clarify what you meant.";
-    return "";
-  }
-
-  // Prefer server-authored probe text; fall back to canned map
-  function probeTextFromServer(turnPayload) {
-    const t = (turnPayload?.probe_text || "").trim();
-    if (t.length > 0) return t; // use AJ/orchestrator-authored sentence
-    return probePromptFor(turnPayload?.probe_type);
-  }
-
+  // --- submit handlers --------------------------------------------------------
   async function onSubmit(e) {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || pending) return;
+    setPending(true);
 
-    // 1) AJ on item answer
     const aj = await callAJ({ item: currentItem, userResponse: input });
+    const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
 
-    // 2) Orchestrator on item
-    const turn = await callTurn({
-      itemId: currentItem.item_id,
-      ajMeasurement: aj
-    });
-
-    // 3) Record
     setHistory((h) => [
       ...h,
       {
@@ -135,40 +145,41 @@ export default function Home() {
       }
     ]);
     setLog((lines) => [...lines, ...turn.trace, "—"]);
-    setTheta({
-      mean: Number(turn.theta_mean.toFixed(2)),
-      se: Number(Math.sqrt(turn.theta_var).toFixed(2))
+    setTheta({ mean: Number(turn.theta_mean.toFixed(2)), se: Number(Math.sqrt(turn.theta_var).toFixed(2)) });
+
+    await logEvent("item_answered", {
+      item_id: currentItem.item_id,
+      label: turn.final_label,
+      probe_type: turn.probe_type
     });
 
-    // 4) If probe needed, use server-authored text; else move to next item
     const prompt = probeTextFromServer(turn);
     const hasProbe = !!(turn.probe_type && turn.probe_type !== "None" && prompt);
-
     if (hasProbe) {
       setAwaitingProbe({
         probeType: turn.probe_type,
-        prompt, // AJ/orchestrator-authored sentence
-        pending: { aj, next_item_id: turn.next_item_id } // re-merge after TW
+        prompt,
+        pending: { aj, next_item_id: turn.next_item_id }
       });
     } else {
       setCurrentId(turn.next_item_id || currentItem.item_id);
     }
 
     setInput("");
+    setPending(false);
   }
 
   async function onSubmitProbe(e) {
     e.preventDefault();
-    if (!awaitingProbe || !probeInput.trim()) return;
+    if (!awaitingProbe || !probeInput.trim() || pending) return;
+    setPending(true);
 
-    // 1) AJ on transcript window (probe answer)
     const tw = await callAJ({
       item: currentItem,
       userResponse: probeInput,
       twType: awaitingProbe.probeType
     });
 
-    // 2) Merge & advance
     const merged = await callTurn({
       itemId: currentItem.item_id,
       ajMeasurement: awaitingProbe.pending.aj,
@@ -176,95 +187,119 @@ export default function Home() {
     });
 
     setLog((lines) => [...lines, ...merged.trace, "—"]);
-    setTheta({
-      mean: Number(merged.theta_mean.toFixed(2)),
-      se: Number(Math.sqrt(merged.theta_var).toFixed(2))
-    });
+    setTheta({ mean: Number(merged.theta_mean.toFixed(2)), se: Number(Math.sqrt(merged.theta_var).toFixed(2)) });
     setCurrentId(merged.next_item_id || currentItem.item_id);
 
-    // record probe answer on last history row
     setHistory((h) => {
       const last = h[h.length - 1];
-      const updated = {
-        ...last,
-        probe_answer: probeInput,
-        probe_label: awaitingProbe.probeType
-      };
+      const updated = { ...last, probe_answer: probeInput, probe_label: awaitingProbe.probeType };
       return [...h.slice(0, -1), updated];
+    });
+
+    await logEvent("probe_answered", {
+      item_id: currentItem.item_id,
+      probe_type: awaitingProbe.probeType
     });
 
     setAwaitingProbe(null);
     setProbeInput("");
+    setPending(false);
   }
 
+  function endSession() {
+    logEvent("session_end", { item_count: history.length });
+    alert("Session ended. Visit /admin to view the log.");
+  }
+
+  // --- init -------------------------------------------------------------------
   useEffect(() => {
-    // Start at first item id already set
+    const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+    setSessionId(id);
+    logEvent("session_start", { item_id: currentId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- render -----------------------------------------------------------------
   return (
-    <main style={{ maxWidth: 800, margin: "40px auto", fontFamily: "system-ui, sans-serif" }}>
-      <h1>Reasoning Demo — Causal Structure (Pilot)</h1>
+    <div className="wrap">
+      <h1 className="headline">Reasoning Demo — Causal Structure (Pilot)</h1>
 
-      <section style={{ padding: "16px", border: "1px solid #eee", borderRadius: 8, marginBottom: 24 }}>
-        <div style={{ display: "flex", gap: 24 }}>
-          <div><strong>θ</strong>: {theta.mean}</div>
-          <div><strong>SE</strong>: {theta.se}</div>
-          <div><strong>Item</strong>: {currentItem.item_id}</div>
-          <div><strong>Tag</strong>: {currentItem.coverage_tag}</div>
-        </div>
-      </section>
+      <div className="subhead">
+        <span className="badge"><strong>θ</strong>&nbsp;{theta.mean}</span>
+        <span className="badge"><strong>SE</strong>&nbsp;{theta.se}</span>
+        <span className="badge">Item: {currentItem.item_id}</span>
+        <span className="badge">Tag: {currentItem.coverage_tag}</span>
+        <span className="badge">Session: {sessionId?.slice(0, 8)}</span>
+        <span className="badge">
+          <label className="muted" style={{ marginRight: 6 }}>Your initials</label>
+          <input className="input" style={{ width: 110, padding: "6px 8px" }} value={userTag} onChange={(e) => setUserTag(e.target.value)} placeholder="optional" />
+        </span>
+        <a className="link" href="/admin" title="Admin log" style={{ marginLeft: "auto" }}>Admin</a>
+      </div>
 
-      <section style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, marginBottom: 16 }}>
-        <p style={{ whiteSpace: "pre-wrap" }}>{currentItem.text}</p>
+      <div className="spacer" />
+
+      <section className="card">
+        <p className="question">{currentItem.text}</p>
 
         {!awaitingProbe && (
-          <form onSubmit={onSubmit} style={{ marginTop: 12 }}>
-            <input
+          <form onSubmit={onSubmit}>
+            <textarea
+              className="textarea"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Your answer (few words or one sentence)"
-              style={{ width: "100%", padding: 12, borderRadius: 6, border: "1px solid #ccc" }}
+              rows={2}
             />
-            <button type="submit" style={{ marginTop: 10, padding: "10px 14px" }}>
-              Submit
-            </button>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button type="submit" className="btn" disabled={pending}>Submit</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowDebug((s) => !s)}>
+                {showDebug ? "Hide debug" : "Show debug"}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={endSession}>
+                End Session
+              </button>
+            </div>
           </form>
         )}
 
         {awaitingProbe && (
-          <form onSubmit={onSubmitProbe} style={{ marginTop: 12 }}>
-            <div style={{ fontStyle: "italic", marginBottom: 8 }}>{awaitingProbe.prompt}</div>
+          <form onSubmit={onSubmitProbe}>
+            <div className="probe" style={{ marginBottom: 8 }}>{awaitingProbe.prompt}</div>
             <input
+              className="input"
               value={probeInput}
               onChange={(e) => setProbeInput(e.target.value)}
               placeholder="One sentence"
-              style={{ width: "100%", padding: 12, borderRadius: 6, border: "1px solid #ccc" }}
             />
-            <button type="submit" style={{ marginTop: 10, padding: "10px 14px" }}>
-              Submit follow‑up
-            </button>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button type="submit" className="btn" disabled={pending}>Submit follow‑up</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowDebug((s) => !s)}>
+                {showDebug ? "Hide debug" : "Show debug"}
+              </button>
+            </div>
           </form>
         )}
       </section>
 
-      <section style={{ marginTop: 24 }}>
-        <h3>Session Trace (debug)</h3>
-        <pre style={{ background: "#fafafa", padding: 12, borderRadius: 6, maxHeight: 260, overflow: "auto" }}>
-{log.join("\n")}
-        </pre>
-      </section>
+      {showDebug && (
+        <section style={{ marginTop: 24 }}>
+          <h3>Session Trace (debug)</h3>
+          <div className="debug">{log.join("\n")}</div>
+        </section>
+      )}
 
       <section style={{ marginTop: 24 }}>
         <h3>History</h3>
         {history.map((h) => (
-          <div key={h.item_id} style={{ borderTop: "1px solid #eee", paddingTop: 8, marginTop: 8 }}>
+          <div key={h.item_id} className="historyItem">
             <div><strong>{h.item_id}</strong> — {h.label} {h.probe_type !== "None" ? `(probe: ${h.probe_type})` : ""}</div>
-            <div style={{ color: "#555" }}>{h.text}</div>
+            <div className="muted">{h.text}</div>
             <div><em>Ans:</em> {h.answer}</div>
             {h.probe_answer && <div><em>Probe:</em> {h.probe_answer}</div>}
           </div>
         ))}
       </section>
-    </main>
+    </div>
   );
 }

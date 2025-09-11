@@ -69,9 +69,7 @@ export default function Home() {
             family: item.family,
             coverage_tag: item.coverage_tag,
             band: item.band,
-            item_params: { a: item.a, b: item.b },
-            expect_direction_word: item.family.startsWith("C6"),
-            expected_list_count: item.family.startsWith("C1") ? 2 : undefined,
+            item_params: { a: item.a, b: item.b }
             tw_type: twType
           }
         })

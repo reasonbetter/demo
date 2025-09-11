@@ -10,8 +10,6 @@ export async function POST(req) {
     if (!process.env.OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), { status: 500 });
     }
-
- import { AJ_SYSTEM } from "../../../lib/prompts/aj.system.js"
     
     const r = await fetch("https://api.openai.com/v1/responses", {
   method: "POST",

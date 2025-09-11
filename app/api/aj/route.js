@@ -13,7 +13,7 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: 'Missing OPENAI_API_KEY' }), { status: 500 });
     }
 
-    // Guard: ensure the system prompt actually arrived as a string
+    // Guard: make sure the system prompt actually arrived as a string
     if (typeof AJ_SYSTEM !== 'string' || AJ_SYSTEM.length < 20) {
       return new Response(JSON.stringify({ error: 'AJ_SYSTEM not a valid string (check export/import)' }), { status: 500 });
     }

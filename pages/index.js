@@ -69,7 +69,7 @@ export default function Home() {
             family: item.family,
             coverage_tag: item.coverage_tag,
             band: item.band,
-            item_params: { a: item.a, b: item.b }
+            item_params: { a: item.a, b: item.b },
             tw_type: twType
           }
         })

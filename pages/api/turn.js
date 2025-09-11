@@ -264,7 +264,8 @@ export default async function handler(req, res) {
     const schemaFeat =
       (bank.schema_features && item.schema_id && bank.schema_features[item.schema_id]) || {};
 
-    const ajUsed = twMeasurement ? mergeTwIntoItem(ajMeasurement, twMeasurement) : ajMeasurement;
+let ajUsed = twMeasurement ? mergeTwIntoItem(ajMeasurement, twMeasurement) : ajMeasurement;
+ajUsed = patchMeasurementForLists(item, ajUsed, schemaFeat);
 
     const { finalLabel, probeType, probeText, probeSource, trace: t1 } =
       finalizeLabelAndProbe(item, ajUsed, schemaFeat);

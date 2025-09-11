@@ -1,44 +1,9 @@
 // app/api/aj/route.js
+import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js';
 export const runtime = 'edge';
 export const preferredRegion = ['iad1', 'cle1']; // closer to Ann Arbor / US East
 
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-const AJ_SYSTEM = `You are the Adaptive Judge.
-
-Return STRICT JSON with:
-- labels: probs for {"Correct&Complete","Correct_Missing","Correct_Flawed","Partial","Incorrect","Novel"} (6 keys; [0,1]; sum≈1.0)
-- pitfalls: {snake_case_key: prob}
-- process_moves: {snake_case_key: prob}
-- calibrations: { p_correct: [0,1], confidence: [0,1] }
-- extractions: {
-    direction_word: "More"|"Less"|null,
-    key_phrases: string[],
-    reasons: string[],
-    reasons_count: number
-  }
-- probe: {
-    intent: "None"|"Completion"|"Mechanism"|"Alternative"|"Clarify"|"Boundary",
-    text: string,         // ≤ 20 words, plain language
-    rationale: string,    // short phrase
-    confidence: [0,1]
-  }
-
-LIST PARSING (when features.expected_list_count = N):
-- Split the user text into distinct reasons. Treat "wealthier and more involved parents"
-  as TWO items: ["wealthier parents","more involved parents"].
-- Count semantically distinct ideas, not grammar.
-- Fill extractions.reasons and reasons_count.
-
-POLICIES:
-- No technical terms (confounder/mediator/collider/selection bias/reverse causation).
-- Don’t cue the answer.
-- Only set direction_word when features.expect_direction_word === true; else null.
-- If expected_list_count is set and reasons_count < N → probe.intent="Completion"
-  with a polite “one more different reason” prompt.
-- If not confident a probe is needed → intent="None" and empty text.
-
-Output STRICT JSON only.`;
 
 export async function POST(req) {
   try {

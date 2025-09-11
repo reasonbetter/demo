@@ -1,7 +1,7 @@
 // app/api/aj/route.js
 export const runtime = 'edge';
 
-import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js'
+import AJ_SYSTEM from '../../../lib/prompts/aj.system.js'; // default export
 
 export async function POST(req) {
   try {
@@ -16,7 +16,8 @@ export async function POST(req) {
 
     const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
-    // Responses API expects content arrays with typed blocks
+    // NOTE: The Responses API requires content blocks with specific types.
+    // Use "input_text" for both system and user messages.
     const r = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -25,13 +26,13 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model,
-        text: { format: 'json' },       // <-- replaces old response_format
-        max_output_tokens: 300,         // <-- correct key for Responses API
+        text: { format: 'json' },          // replaces old response_format
+        max_output_tokens: 300,            // correct key for Responses API
         input: [
           {
             role: 'system',
             content: [
-              { type: 'text', text: AJ_SYSTEM }   // <-- content array, not a string
+              { type: 'input_text', text: AJ_SYSTEM }
             ]
           },
           {
@@ -62,13 +63,15 @@ export async function POST(req) {
       );
     }
 
-    // Prefer convenience field; fall back to structured content
-    const text =
+    // Prefer convenience field; fall back to first output_text block
+    const textOut =
       data?.output_text ??
-      data?.output?.[0]?.content?.[0]?.text ??
-      '';
+      (Array.isArray(data?.output)
+        ? (data.output[0]?.content?.find?.(b => b.type === 'output_text')?.text ||
+           data.output[0]?.content?.[0]?.text)
+        : '');
 
-    if (!text) {
+    if (!textOut) {
       return new Response(
         JSON.stringify({
           error: 'Model returned empty output_text',
@@ -80,10 +83,10 @@ export async function POST(req) {
 
     let payload;
     try {
-      payload = JSON.parse(text);
+      payload = JSON.parse(textOut);
     } catch {
       return new Response(
-        JSON.stringify({ error: 'Model returned non-JSON', sample: text.slice(0, 800) }),
+        JSON.stringify({ error: 'Model returned non-JSON', sample: textOut.slice(0, 800) }),
         { status: 502 }
       );
     }
@@ -95,4 +98,12 @@ export async function POST(req) {
   } catch (err) {
     return new Response(JSON.stringify({ error: 'AJ route error', details: String(err) }), { status: 500 });
   }
+}
+
+// Optional: quick GET for smoke tests (handy during debugging)
+export async function GET() {
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
 }

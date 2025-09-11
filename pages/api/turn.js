@@ -163,7 +163,16 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
     probeSource = "policy";
     trace.push("Evidence sufficient → skip probe.");
   }
-
+try {
+  const need = expectedListNFor(item, schemaFeatures);
+  const rc = toNum(aj?.extractions?.reasons_count, 0);
+  if (need && rc >= need && probeType === "Completion") {
+    probeType = "None";
+    probeText = "";
+    probeSource = "policy";
+    trace.push(`Completion satisfied via AJ extraction (reasons_count=${rc}) → no probe.`);
+  }
+} catch {}
   return { finalLabel, probeType, probeText, probeSource, trace };
 }
 

@@ -32,6 +32,38 @@ function toNum(x, d = 0) {
   const n = typeof x === "number" ? x : parseFloat(x);
   return Number.isFinite(n) ? n : d;
 }
+function expectedListNFor(item, schemaFeatures) {
+  // Prefer schema config; otherwise infer for the C1 family
+  if (schemaFeatures && Number.isFinite(schemaFeatures.expected_list_count)) {
+    return schemaFeatures.expected_list_count;
+  }
+  return item?.family?.startsWith("C1") ? 2 : null;
+}
+
+// If AJ found the required number of list items but labels are weak/missing,
+// patch the measurement so scoring & routing remain fair.
+function patchMeasurementForLists(item, aj, schemaFeatures) {
+  try {
+    const need = expectedListNFor(item, schemaFeatures);
+    if (!need) return aj;
+    const rc = toNum(aj?.extractions?.reasons_count, 0);
+    if (rc < need) return aj;
+
+    const labels = { ...(aj?.labels || {}) };
+    // If AJ under-labeled (e.g., Novel/Partial), upgrade to at least Correct_Missing.
+    const cm = Math.max(toNum(labels["Correct_Missing"], 0), 0.75);
+    labels["Correct_Missing"] = cm;
+    labels["Partial"] = Math.min(toNum(labels["Partial"], 0), 0.20);
+    labels["Novel"] = 0.0;
+
+    const cal = { ...(aj?.calibrations || {}) };
+    cal.p_correct = Math.max(toNum(cal.p_correct, 0), 0.65);
+
+    return { ...aj, labels, calibrations: cal, _patched: "list_count_satisfied" };
+  } catch {
+    return aj;
+  }
+}
 
 function sigmoid(x) {
   if (x >= 0) {

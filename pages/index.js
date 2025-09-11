@@ -183,7 +183,10 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
     await logEvent("item_answered", {
       item_id: currentItem.item_id,
       label: turn.final_label,
-      probe_type: turn.probe_type
+      probe_type: turn.probe_type,
+      aj,             // AJ measurement payload
+      turn,           // controller payload
+      trace: turn.trace
     });
 
     const prompt = probeTextFromServer(turn);
@@ -237,7 +240,12 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
 
     await logEvent("probe_answered", {
       item_id: currentItem.item_id,
-      probe_type: awaitingProbe.probeType
+      probe_type: awaitingProbe.probeType,
+      probe_prompt: awaitingProbe.prompt,
+      probe_answer: probeInput,
+      twAj: tw,              // AJ on the probe text
+      merged: merged,        // controller payload after merge
+      trace: merged.trace
     });
 
     setAwaitingProbe(null);

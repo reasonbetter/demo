@@ -1,42 +1,41 @@
 // app/api/aj/route.js
-export const runtime = 'edge';                      // ← Edge runtime
-export const preferredRegion = ['iad1', 'cle1'];    // ← Close to Ann Arbor/US East
+export const runtime = 'edge';
+export const preferredRegion = ['iad1', 'cle1']; // closer to Ann Arbor / US East
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'; 
-// Tip: try 4o-mini first for latency. If you prefer gpt-5-mini reliability, set OPENAI_MODEL in Vercel.
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const AJ_SYSTEM = `You are the Adaptive Judge.
 
 Return STRICT JSON with:
-- labels: probs for {"Correct&Complete","Correct_Missing","Correct_Flawed","Partial","Incorrect","Novel"}; 6 keys, [0,1], sum≈1.0
+- labels: probs for {"Correct&Complete","Correct_Missing","Correct_Flawed","Partial","Incorrect","Novel"} (6 keys; [0,1]; sum≈1.0)
 - pitfalls: {snake_case_key: prob}
 - process_moves: {snake_case_key: prob}
 - calibrations: { p_correct: [0,1], confidence: [0,1] }
 - extractions: {
     direction_word: "More"|"Less"|null,
     key_phrases: string[],
-    reasons: string[],        // parsed when a list is expected
-    reasons_count: number     // length of reasons
+    reasons: string[],
+    reasons_count: number
   }
 - probe: {
     intent: "None"|"Completion"|"Mechanism"|"Alternative"|"Clarify"|"Boundary",
-    text: string,         // ≤ 20 words, plain language, no jargon
+    text: string,         // ≤ 20 words, plain language
     rationale: string,    // short phrase
     confidence: [0,1]
   }
 
 LIST PARSING (when features.expected_list_count = N):
-- Split the user's text into distinct reasons. Treat a clause like
-  "wealthier and more involved parents" as TWO items:
-  ["wealthier parents","more involved parents"].
-- Be generous; count semantically distinct ideas, not grammar.
-- Set extractions.reasons (array) and reasons_count (integer).
+- Split the user text into distinct reasons. Treat "wealthier and more involved parents"
+  as TWO items: ["wealthier parents","more involved parents"].
+- Count semantically distinct ideas, not grammar.
+- Fill extractions.reasons and reasons_count.
 
 POLICIES:
-- No technical terms (confounder/mediator/collider/reverse causation/selection bias).
+- No technical terms (confounder/mediator/collider/selection bias/reverse causation).
 - Don’t cue the answer.
 - Only set direction_word when features.expect_direction_word === true; else null.
-- If expected_list_count is set and reasons_count < N → probe.intent="Completion" with a polite “one more different reason” prompt.
+- If expected_list_count is set and reasons_count < N → probe.intent="Completion"
+  with a polite “one more different reason” prompt.
 - If not confident a probe is needed → intent="None" and empty text.
 
 Output STRICT JSON only.`;
@@ -48,9 +47,9 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: 'Bad request: missing item.text or userResponse' }), { status: 400 });
     }
 
-    // Keep the user payload small for latency:
+    // Keep features small for latency
     const smallFeatures = {
-      schema_id: features?.schema_id,
+      schema_id: features?.schema_id ?? null,
       expected_list_count: features?.expected_list_count ?? null,
       expect_direction_word: !!features?.expect_direction_word,
       tw_type: features?.tw_type ?? null
@@ -58,7 +57,6 @@ export async function POST(req) {
 
     const body = {
       model: MODEL,
-      // Responses API works well on Edge and supports json_object formatting
       input: [
         { role: "system", content: AJ_SYSTEM },
         { role: "user", content: JSON.stringify({
@@ -77,9 +75,9 @@ export async function POST(req) {
         "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(body),
-      // Abort fast if the upstream stalls; tune as you like:
-      // signal: AbortSignal.timeout(6500)
+      body: JSON.stringify(body)
+      // Optional hard timeout:
+      //, signal: AbortSignal.timeout(6500)
     });
 
     if (!r.ok) {

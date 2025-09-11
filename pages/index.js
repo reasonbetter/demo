@@ -30,19 +30,20 @@ export default function Home() {
           coverage_tag: item.coverage_tag,
           band: item.band,
           item_params: { a: item.a, b: item.b },
-          schema_features: bank.schema_features[item.schema_id] || {},
           tw_type: twType
         }
       })
     });
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `AJ HTTP ${res.status}`);
+      // Read raw text to see the real error returned by /api/aj
+      const text = await res.text();
+      throw new Error(`AJ HTTP ${res.status}: ${text.slice(0, 800)}`);
     }
     return await res.json();
   } catch (e) {
-    alert(`Judge error: ${e.message}`);
-    // Return a safe fallback so the demo doesn’t freeze
+    alert(`AJ error: ${e.message}`);
+    // Safe fallback so UI continues, but it’s why you’re seeing Mechanism every time
     return {
       labels: { Novel: 1.0 },
       pitfalls: {},
@@ -52,6 +53,7 @@ export default function Home() {
     };
   }
 }
+
 
 async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
   try {

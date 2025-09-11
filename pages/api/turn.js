@@ -25,6 +25,14 @@ let SESSION = {
   coverage: {}
 };
 
+// ---- helpers ---------------------------------------------------------------
+
+// numeric coerce with fallback
+function toNum(x, d = 0) {
+  const n = typeof x === "number" ? x : parseFloat(x);
+  return Number.isFinite(n) ? n : d;
+}
+
 function sigmoid(x) {
   if (x >= 0) {
     const z = Math.exp(-x);
@@ -37,33 +45,43 @@ function sigmoid(x) {
 
 function expectedScore(labels) {
   const m = CFG.score_map;
-  return Object.entries(labels || {}).reduce((acc, [k, v]) => acc + (m[k] || 0) * v, 0);
+  let sum = 0;
+  for (const [k, v] of Object.entries(labels || {})) {
+    sum += (m[k] || 0) * toNum(v, 0);
+  }
+  return sum;
 }
 
 function labelArgmax(labels) {
   let best = "Novel";
   let bestp = -1;
   for (const [k, v] of Object.entries(labels || {})) {
-    if (v > bestp) {
-      bestp = v;
+    const p = toNum(v, -1);
+    if (p > bestp) {
+      bestp = p;
       best = k;
     }
   }
   return [best, bestp];
 }
 
+// ---- core policy -----------------------------------------------------------
+
 function finalizeLabelAndProbe(item, aj, schemaFeatures) {
   const trace = [];
 
   const labels = aj?.labels || { Novel: 1.0 };
-  const [finalLabel, pFinal] = labelArgmax(labels);
-  const conf = aj?.calibrations?.confidence ?? 0.5;
-  trace.push(`Argmax label=${finalLabel} (${pFinal.toFixed(2)}); AJ confidence=${conf.toFixed(2)}`);
+  const [finalLabel, pFinalRaw] = labelArgmax(labels);
+  const pFinal = toNum(pFinalRaw, 0);
+  const conf = toNum(aj?.calibrations?.confidence, 0.5);
+  trace.push(
+    `Argmax label=${finalLabel} (${pFinal.toFixed(2)}); AJ confidence=${conf.toFixed(2)}`
+  );
 
   // pitfalls
   const pit = aj?.pitfalls || {};
   const highPit = Object.entries(pit)
-    .filter(([, v]) => v >= CFG.tau_pitfall_hi)
+    .filter(([, v]) => toNum(v, 0) >= CFG.tau_pitfall_hi)
     .map(([k]) => k);
   if (highPit.length) trace.push(`High pitfalls: ${highPit.join(", ")}`);
 
@@ -74,21 +92,20 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
   const pm = aj?.process_moves || {};
   let moveOK = true;
   for (const mv of reqMoves) {
-    if ((pm[mv] || 0) < CFG.tau_required_move) moveOK = false;
+    if (toNum(pm[mv], 0) < CFG.tau_required_move) moveOK = false;
   }
   if (reqMoves.length) {
     trace.push(`Required moves present? ${moveOK} (need ≥${CFG.tau_required_move})`);
   }
 
-  // Prefer AJ‑authored probe (guard: short & present)
+  // Prefer AJ‑authored probe (guard: present & short)
   let probeType = "None";
   let probeText = "";
   let probeSource = "policy";
 
   const ajIntent = aj?.probe?.intent || "None";
   const ajText = (aj?.probe?.text || "").trim();
-  const wordCount = ajText ? ajText.split(/\s+/).length : 0;
-  const useAjProbe = ajIntent !== "None" && ajText && wordCount <= 24;
+  const useAjProbe = ajIntent !== "None" && ajText && ajText.split(/\s+/).length <= 24;
 
   if (useAjProbe) {
     probeType = ajIntent;
@@ -107,7 +124,7 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
   }
 
   // Evidence sufficiency → skip probe
-  const pComplete = labels["Correct&Complete"] || 0;
+  const pComplete = toNum(labels["Correct&Complete"], 0);
   if (pComplete >= CFG.tau_complete && moveOK && highPit.length === 0 && conf >= CFG.tau_confidence) {
     probeType = "None";
     probeText = "";
@@ -119,31 +136,37 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
 }
 
 function fusePCorrect(theta, item, aj) {
-  const a = item?.a ?? 1;
-  const b = item?.b ?? 0;
-  const pBase = sigmoid(a * ((theta ?? 0) - b));
+  const a = toNum(item?.a, 1);
+  const b = toNum(item?.b, 0);
+  const pBase = sigmoid(a * (toNum(theta, 0) - b));
   const pAj = aj?.calibrations?.p_correct;
-  if (pAj == null) return { p: pBase, note: `p_base=${pBase.toFixed(3)}; no p_correct_AJ` };
-  const p = 0.5 * pBase + 0.5 * pAj;
-  return { p, note: `p_base=${pBase.toFixed(3)}; p_correct_AJ=${pAj.toFixed(3)}; p_fused=${p.toFixed(3)}` };
+  const pAjNum = toNum(pAj, NaN);
+  if (!Number.isFinite(pAjNum)) {
+    return { p: pBase, note: `p_base=${pBase.toFixed(3)}; no p_correct_AJ` };
+  }
+  const p = 0.5 * pBase + 0.5 * pAjNum;
+  return { p, note: `p_base=${pBase.toFixed(3)}; p_correct_AJ=${pAjNum.toFixed(3)}; p_fused=${p.toFixed(3)}` };
 }
 
 function thetaUpdate(item, aj) {
   const labels = aj?.labels || {};
-  const yhat = expectedScore(labels);
+  const yhat = expectedScore(labels); // already numeric
   const { p, note } = fusePCorrect(SESSION.theta_mean, item, aj);
-  const a = item?.a ?? 1;
+  const a = toNum(item?.a, 1);
   const info = (a ** 2) * p * (1 - p) + 1e-6;
-  const thetaVarNew = 1.0 / (1.0 / SESSION.theta_var + info);
-  const thetaMeanNew = SESSION.theta_mean + thetaVarNew * a * (yhat - p);
+  const thetaVarNew = 1.0 / (1.0 / toNum(SESSION.theta_var, 1.5) + info);
+  const thetaMeanNew = toNum(SESSION.theta_mean, 0) + thetaVarNew * a * (yhat - p);
+
   const t = [
     note,
-    `y_hat=${yhat.toFixed(3)}; info=${info.toFixed(3)}; θ: ${SESSION.theta_mean.toFixed(2)}→${thetaMeanNew.toFixed(2)}; var: ${SESSION.theta_var.toFixed(2)}→${thetaVarNew.toFixed(2)}`
+    `y_hat=${yhat.toFixed(3)}; info=${info.toFixed(3)}; θ: ${toNum(SESSION.theta_mean, 0).toFixed(2)}→${thetaMeanNew.toFixed(2)}; var: ${toNum(SESSION.theta_var, 1.5).toFixed(2)}→${thetaVarNew.toFixed(2)}`
   ];
   SESSION.theta_mean = thetaMeanNew;
   SESSION.theta_var = thetaVarNew;
   return t;
 }
+
+// ---- routing ----------------------------------------------------------------
 
 function eligibleCandidates() {
   const asked = new Set(SESSION.asked);
@@ -157,9 +180,9 @@ function applyCoverage(cands) {
 }
 
 function eigProxy(theta, it) {
-  const a = it?.a ?? 1;
-  const b = it?.b ?? 0;
-  const p = sigmoid(a * ((theta ?? 0) - b));
+  const a = toNum(it?.a, 1);
+  const b = toNum(it?.b, 0);
+  const p = sigmoid(a * (toNum(theta, 0) - b));
   return (a ** 2) * p * (1 - p);
 }
 
@@ -179,21 +202,24 @@ function selectNextItem() {
   return { next: best, trace };
 }
 
+// ---- TW merge ---------------------------------------------------------------
+
 function mergeTwIntoItem(ajItem, tw) {
-  // If TW shows a decent mechanism, upgrade completeness a bit (safe, optional).
   try {
-    const good = (tw?.process_moves?.mechanism_explained_well || 0) >= 0.6;
+    const good = toNum(tw?.process_moves?.mechanism_explained_well, 0) >= 0.6;
     if (!good) return ajItem;
     const labels = { ...(ajItem?.labels || {}) };
-    labels["Correct&Complete"] = Math.max(labels["Correct&Complete"] || 0, 0.9);
-    labels["Correct_Missing"] = Math.min(labels["Correct_Missing"] || 0, 0.1);
+    labels["Correct&Complete"] = Math.max(toNum(labels["Correct&Complete"], 0), 0.9);
+    labels["Correct_Missing"] = Math.min(toNum(labels["Correct_Missing"], 0), 0.1);
     const cal = { ...(ajItem?.calibrations || {}) };
-    cal.p_correct = Math.max(cal.p_correct || 0, 0.85);
+    cal.p_correct = Math.max(toNum(cal.p_correct, 0), 0.85);
     return { ...ajItem, labels, calibrations: cal };
   } catch {
     return ajItem;
   }
 }
+
+// ---- API route --------------------------------------------------------------
 
 export default async function handler(req, res) {
   try {

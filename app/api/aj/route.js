@@ -1,7 +1,7 @@
 // app/api/aj/route.js
 export const runtime = 'edge';
 
-import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js';
+import AJ_SYSTEM from '../../../lib/prompts/aj.system.js'; // if named: { AJ_SYSTEM }
 
 export async function POST(req) {
   try {
@@ -24,11 +24,14 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model,
-        text: { format: "json" },
-        max_output_tokens: 300, // Responses API uses this field
+        // ⬇️ NEW: ask the Responses API to format the output as JSON text
+        text: { format: 'json' },
+        max_output_tokens: 300, // correct key for Responses API
         input: [
           { role: 'system', content: AJ_SYSTEM },
-          { role: 'user', content: JSON.stringify({
+          {
+            role: 'user',
+            content: JSON.stringify({
               stimulus: item.text,
               user_response: userResponse,
               features: features || {}
@@ -38,36 +41,41 @@ export async function POST(req) {
       })
     });
 
-    // Parse the body once
     const data = await r.json();
     if (!r.ok) {
       return new Response(
-        JSON.stringify({ error: 'OpenAI call failed', details: JSON.stringify(data).slice(0, 800) }),
+        JSON.stringify({
+          error: 'OpenAI call failed',
+          details: JSON.stringify(data).slice(0, 800)
+        }),
         { status: 502 }
       );
     }
 
-    // Responses API convenience; add a fallback path
+    // Prefer convenience field; fall back to structured content
     const text =
       data?.output_text ??
       data?.output?.[0]?.content?.[0]?.text ??
       '';
 
     if (!text) {
-      return new Response(JSON.stringify({
-        error: 'Model returned empty output_text',
-        sample: JSON.stringify(data).slice(0, 800)
-      }), { status: 502 });
+      return new Response(
+        JSON.stringify({
+          error: 'Model returned empty output_text',
+          sample: JSON.stringify(data).slice(0, 800)
+        }),
+        { status: 502 }
+      );
     }
 
     let payload;
     try {
       payload = JSON.parse(text);
     } catch {
-      return new Response(JSON.stringify({
-        error: 'Model returned non-JSON',
-        sample: text.slice(0, 800)
-      }), { status: 502 });
+      return new Response(
+        JSON.stringify({ error: 'Model returned non-JSON', sample: text.slice(0, 800) }),
+        { status: 502 }
+      );
     }
 
     return new Response(JSON.stringify(payload), {

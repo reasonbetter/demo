@@ -1,11 +1,23 @@
 // app/api/aj/route.js
 export const runtime = 'edge';
+// optional (helps Vercel choose region close to you)
+// export const preferredRegion = 'iad1';
 
-import { AJ_SYSTEM } from "../../../lib/prompts/aj.system.js";
+import { AJ_SYSTEM } from "../../../lib/prompts/aj.system.js"; // adjust if your file lives elsewhere
+
+export async function GET() {
+  // Helpful while debugging: confirms route is alive
+  return new Response(JSON.stringify({ ok: true, method: 'GET' }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+}
 
 export async function POST(req) {
   try {
-    const { item, userResponse, features } = await req.json();
+    const body = await req.json();
+    const { item, userResponse, features } = body || {};
+
     if (!item?.text || typeof userResponse !== "string") {
       return new Response(JSON.stringify({ error: "Bad request: missing item.text or userResponse" }), { status: 400 });
     }
@@ -15,23 +27,28 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), { status: 500 });
     }
 
-    // Edge runtime ⇒ use the REST fetch form
-    const body = {
-      model: process.env.OPENAI_MODEL || "gpt-5-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: AJ_SYSTEM },
-        { role: "user", content: JSON.stringify({ stimulus: item.text, user_response: userResponse, features: features || {} }) }
-      ]
-    };
-
+    // Edge runtime => use fetch to OpenAI REST endpoint
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-5-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: AJ_SYSTEM },
+          { role: "user", content: JSON.stringify({
+              stimulus: item.text,
+              user_response: userResponse,
+              features: features || {}
+            })
+          }
+        ],
+        // keep outputs tight for latency
+        max_tokens: 300
+      })
     });
 
     if (!r.ok) {

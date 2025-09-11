@@ -1,5 +1,5 @@
 export const runtime = 'edge';
-
+ import { AJ_SYSTEM } from "../../../lib/prompts/aj.system.js"
 export async function POST(req) {
   try {
     const { item, userResponse, features } = await req.json();

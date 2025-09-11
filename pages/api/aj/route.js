@@ -3,7 +3,7 @@ import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js';
 export const runtime = 'edge';
 export const preferredRegion = ['iad1', 'cle1']; // closer to Ann Arbor / US East
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
 export async function POST(req) {
   try {

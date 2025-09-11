@@ -18,7 +18,7 @@ export async function POST(req) {
         { role: 'system', content: AJ_SYSTEM },
         { role: 'user', content: JSON.stringify({ stimulus: item.text, user_response: userResponse, features: features || {} }) }
       ],
-      max_tokens: 300
+      max_completion_tokens: 300
     })
   });
   const data = await r.json();

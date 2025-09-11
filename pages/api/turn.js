@@ -108,98 +108,37 @@ function labelArgmax(labels) {
   return [best, bestp];
 }
 
-function finalizeLabelAndProbe(item, aj, schemaFeatures) {
+function finalizeLabelAndProbe(item, aj) {
   const trace = [];
-  const labels = aj.labels || { Novel: 1.0 };
-  const [finalLabel, pFinal] = labelArgmax(labels);
+  const [finalLabel, pFinal] = labelArgmax(aj.labels || {});
   const conf = aj.calibrations?.confidence ?? 0.5;
   trace.push(`Argmax label=${finalLabel} (${pFinal.toFixed(2)}); AJ confidence=${conf.toFixed(2)}`);
 
-  // pitfalls present
-  const pit = aj.pitfalls || {};
-  const highPit = Object.entries(pit).filter(([_, v]) => v >= CFG.tau_pitfall_hi).map(([k]) => k);
-  if (highPit.length) trace.push(`High pitfalls: ${highPit.join(", ")}`);
+  let probe = "None";
+  let probeText = "";
 
-  // required process moves
-  const req = (schemaFeatures?.required_moves) || [];
-  const pm = aj.process_moves || {};
-  let moveOK = true;
-  for (const mv of req) {
-    if ((pm[mv] || 0) < CFG.tau_required_move) moveOK = false;
-  }
-  if (req.length) trace.push(`Required moves present? ${moveOK} (need ≥${CFG.tau_required_move})`);
-
-  // Evidence sufficiency → no probe
-  const pComplete = labels["Correct&Complete"] || 0;
-  const anyHiPit = highPit.length > 0;
-  if (pComplete >= CFG.tau_complete && moveOK && !anyHiPit && conf >= CFG.tau_confidence) {
-    trace.push("Evidence sufficient → skip probe.");
-    return { finalLabel, probe: { intent: "None", text: "", source: "policy" }, trace };
+  // 1) Start with AJ recommendation
+  if (aj.probe && aj.probe.intent) {
+    probe = aj.probe.intent;
+    probeText = (aj.probe.text || "").trim();
+    trace.push(`Using AJ probe intent=${probe} (guard passed).`);
+  } else {
+    // 2) Fallback to a simple default by label
+    if (finalLabel === "Correct_Missing" || finalLabel === "Correct_Flawed") probe = "Mechanism";
+    else if (["Partial","Incorrect","Novel"].includes(finalLabel)) probe = "Clarify";
   }
 
-  // Universal “AJ obviously failed” guard (e.g., Novel 0.99 with very low confidence)
-  const isFallbackNovel = (labels["Novel"] || 0) >= 0.99 && conf <= 0.25;
-  if (isFallbackNovel) {
-    trace.push("AJ looked like a fallback/failed call → no probe this turn.");
-    return { finalLabel, probe: { intent: "None", text: "", source: "policy" }, trace };
-  }
-
-  // 1) Prefer AJ-authored probe if present & safe
-  const ajProbe = aj.probe || { intent: "None", text: "" };
-  if (ajProbe.intent !== "None" && passesProbeGuard(item, ajProbe)) {
-    trace.push(`Using AJ probe intent=${ajProbe.intent} (guard passed).`);
-    return { finalLabel, probe: { ...ajProbe, source: "AJ" }, trace };
-  }
-
-  // 2) Otherwise, apply a tiny schema-aware default (only where essential)
-  // C1: Confounder Generation expects two distinct reasons
-  if (item.family?.startsWith("C1")) {
-    const onlyOne = (pit["only_one_reason_given"] || 0) >= 0.5 || (labels["Partial"] || 0) >= 0.6;
-    if (onlyOne) {
-      const p = fallbackProbe("Completion");
-      trace.push("C1: only one reason given → Completion probe (fallback).");
-      return { finalLabel, probe: p, trace };
-    }
-  }
-
-  // C8 (from your prior policy): Boundary is most diagnostic for low-quality
-  if (item.family?.startsWith("C8") && ["Partial", "Incorrect", "Novel"].includes(finalLabel)) {
-    const p = fallbackProbe("Boundary");
-    trace.push("C8: low-quality → Boundary probe (fallback).");
-    return { finalLabel, probe: p, trace };
-  }
-
-  // 3) Last resort: minimal label-aware fallback (no heavy mapping)
-  let intent = "None";
-  if (finalLabel === "Correct&Complete") intent = "None";
-  else if (finalLabel === "Correct_Missing" || finalLabel === "Correct_Flawed") intent = "Mechanism";
-  else if (["Partial", "Incorrect", "Novel"].includes(finalLabel)) intent = "Alternative";
-
-  const p = fallbackProbe(intent);
-  trace.push(`Fallback intent=${intent} (minimal policy).`);
-// C1 list-count guard: if user gave enough distinct reasons, suppress Completion.
-if (item.family.startsWith("C1")) {
-  const expected = 2; // our C1s expect two reasons
-  const listCount =
-    (aj.extractions?.list_count ?? (aj.extractions?.list_items?.length ?? 0));
-  const onlyCountPit = (aj.pitfalls?.only_one_reason_given || 0) >= CFG.tau_pitfall_hi
-                    || (aj.pitfalls?.multiple_reasons_needed || 0) >= CFG.tau_pitfall_hi;
-
-  if (listCount >= expected && probe === "Completion") {
+  // 3) Universal sufficiency: skip probe if clearly complete & confident
+  const pComplete = (aj.labels?.["Correct&Complete"] || 0);
+  if (pComplete >= CFG.tau_complete && conf >= CFG.tau_confidence) {
     probe = "None";
-    // Optional: soften the label if it was only missing due to count
-    if (finalLabel === "Correct_Missing" && onlyCountPit) {
-      // Don’t inflate to Correct&Complete; just drop the pitfall-driven probe.
-      // (Keeps scoring conservative but fixes UX.)
-      // If you prefer to upgrade scoring, you can set:
-      // labels["Correct&Complete"] = Math.max(labels["Correct&Complete"]||0, 0.8);
-    }
-    trace.push(`C1 list-count guard → list_count=${listCount} ≥ ${expected} (no Completion probe).`);
+    probeText = "";
+    trace.push("Evidence sufficient → skip probe.");
   }
+
+  return { finalLabel, probe, probeText, trace };
 }
 
-  return { finalLabel, probe: p, trace };
-}
 
 
 function fusePCorrect(theta, item, aj) {

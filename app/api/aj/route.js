@@ -28,7 +28,7 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model,
-        text: { format: 'json' },      // use Responses API "text.format"
+        text: { format: 'json_object' },      // use Responses API "text.format"
         max_output_tokens: 300,        // Responses API key
         input: [
           {

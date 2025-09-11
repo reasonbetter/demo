@@ -108,6 +108,19 @@ function probeTextFromServer(data) {
 
     // 2) Orchestrator on item
     const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
+const prompt = probeTextFromServer(data);       // <-- use server-authored probe text if present
+
+// If your UI tracks a probe prompt in state:
+setProbePrompt(prompt);
+
+// Show the probe UI only when there is a prompt; otherwise advance to next item
+if (prompt && prompt.length > 0) {
+  setAwaitingProbe(true);                       // your boolean to show a probe input box
+} else {
+  setAwaitingProbe(false);
+  const next = bank.items.find(it => it.item_id === data.next_item_id);
+  setCurrentItem(next);                         // however you advance to the next question
+}
 
     // Record
     setHistory((h) => [

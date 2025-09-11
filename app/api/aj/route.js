@@ -1,7 +1,8 @@
 // app/api/aj/route.js
 export const runtime = 'edge';
 // lib/prompts/aj.system.js
-export const AJ_SYSTEM = `You are the Adaptive Judge... (full prompt here)`;
+export const runtime = 'edge';
+import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js';
 
 
 export async function POST(req) {

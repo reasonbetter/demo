@@ -43,13 +43,11 @@ Return JSON ONLY with fields:
             { role: "user", content: JSON.stringify(userMsg) }
           ],
           response_format: { type: "json_object" },
-          temperature: 1
         });
         text = r.output_text;
       } else {
         const r = await client.chat.completions.create({
           model: MODEL,
-          temperature: 1,
           response_format: { type: "json_object" },
           messages: [
             { role: "system", content: AJ_SYSTEM },

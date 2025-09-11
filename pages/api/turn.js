@@ -63,12 +63,12 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
   const conf = aj.calibrations?.confidence ?? 0.5;
   trace.push(`Argmax label=${finalLabel} (${pFinal.toFixed(2)}); AJ confidence=${conf.toFixed(2)}`);
 
-  // pitfalls
+  // pitfalls present
   const pit = aj.pitfalls || {};
   const highPit = Object.entries(pit).filter(([_, v]) => v >= CFG.tau_pitfall_hi).map(([k]) => k);
   if (highPit.length) trace.push(`High pitfalls: ${highPit.join(", ")}`);
 
-  // required moves
+  // required process moves
   const req = (schemaFeatures?.required_moves) || [];
   const pm = aj.process_moves || {};
   let moveOK = true;
@@ -77,45 +77,57 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
   }
   if (req.length) trace.push(`Required moves present? ${moveOK} (need ≥${CFG.tau_required_move})`);
 
-  // default probe by label
-  let probe = "Alternative";
-  if (finalLabel === "Correct&Complete") probe = "None";
-  if (finalLabel === "Correct_Missing" || finalLabel === "Correct_Flawed") probe = "Mechanism";
-  if (finalLabel === "Partial" || finalLabel === "Incorrect" || finalLabel === "Novel") probe = "Alternative";
-
-  // C8: force Boundary if low-quality
-  if (item.family.startsWith("C8") && ["Partial", "Incorrect", "Novel"].includes(finalLabel)) {
-    probe = "Boundary";
-    trace.push("Schema C8 → Boundary probe.");
-  }
-
-  // evidence sufficiency → skip probe
+  // Evidence sufficiency → no probe
   const pComplete = labels["Correct&Complete"] || 0;
   const anyHiPit = highPit.length > 0;
   if (pComplete >= CFG.tau_complete && moveOK && !anyHiPit && conf >= CFG.tau_confidence) {
-    probe = "None";
     trace.push("Evidence sufficient → skip probe.");
+    return { finalLabel, probe: { intent: "None", text: "", source: "policy" }, trace };
   }
 
-  // C6 patch for bias direction
-  if (CFG.enable_c6_patch && item.family.startsWith("C6")) {
-    const direction = aj.extractions?.direction_word;
-    const flawed = (labels["Correct_Flawed"] || 0) >= 0.2;
-    const vague = (pit["direction_vague"] || 0) >= CFG.tau_pitfall_hi;
-    if ((direction === "More" || direction === "Less") && !flawed && !vague) {
-      probe = "None";
-      trace.push("C6 patch → direction given, no flaw/vagueness → no probe.");
+  // Universal “AJ obviously failed” guard (e.g., Novel 0.99 with very low confidence)
+  const isFallbackNovel = (labels["Novel"] || 0) >= 0.99 && conf <= 0.25;
+  if (isFallbackNovel) {
+    trace.push("AJ looked like a fallback/failed call → no probe this turn.");
+    return { finalLabel, probe: { intent: "None", text: "", source: "policy" }, trace };
+  }
+
+  // 1) Prefer AJ-authored probe if present & safe
+  const ajProbe = aj.probe || { intent: "None", text: "" };
+  if (ajProbe.intent !== "None" && passesProbeGuard(item, ajProbe)) {
+    trace.push(`Using AJ probe intent=${ajProbe.intent} (guard passed).`);
+    return { finalLabel, probe: { ...ajProbe, source: "AJ" }, trace };
+  }
+
+  // 2) Otherwise, apply a tiny schema-aware default (only where essential)
+  // C1: Confounder Generation expects two distinct reasons
+  if (item.family?.startsWith("C1")) {
+    const onlyOne = (pit["only_one_reason_given"] || 0) >= 0.5 || (labels["Partial"] || 0) >= 0.6;
+    if (onlyOne) {
+      const p = fallbackProbe("Completion");
+      trace.push("C1: only one reason given → Completion probe (fallback).");
+      return { finalLabel, probe: p, trace };
     }
   }
 
-  // prefer Mechanism for low-quality (diagnostic)
-  if (probe === "Alternative" && ["Partial", "Incorrect", "Novel"].includes(finalLabel) && !item.family.startsWith("C8")) {
-    probe = "Mechanism";
-    trace.push("Upgrade probe to Mechanism (diagnostic).");
+  // C8 (from your prior policy): Boundary is most diagnostic for low-quality
+  if (item.family?.startsWith("C8") && ["Partial", "Incorrect", "Novel"].includes(finalLabel)) {
+    const p = fallbackProbe("Boundary");
+    trace.push("C8: low-quality → Boundary probe (fallback).");
+    return { finalLabel, probe: p, trace };
   }
 
-  return { finalLabel, probe, trace };
+  // 3) Last resort: minimal label-aware fallback (no heavy mapping)
+  let intent = "None";
+  if (finalLabel === "Correct&Complete") intent = "None";
+  else if (finalLabel === "Correct_Missing" || finalLabel === "Correct_Flawed") intent = "Mechanism";
+  else if (["Partial", "Incorrect", "Novel"].includes(finalLabel)) intent = "Alternative";
+
+  const p = fallbackProbe(intent);
+  trace.push(`Fallback intent=${intent} (minimal policy).`);
+  return { finalLabel, probe: p, trace };
 }
+
 
 function fusePCorrect(theta, item, aj) {
   const pBase = sigmoid(item.a * (theta - item.b));

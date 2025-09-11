@@ -99,28 +99,53 @@ function probeTextFromServer(data) {
   return probePromptFor(data?.probe_type); // ← fallback to your old map
 }
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    if (!input.trim()) return;
+async function onSubmit(e) {
+  e.preventDefault();
+  if (!input.trim()) return;
 
-    // 1) AJ on item answer
-    const aj = await callAJ({ item: currentItem, userResponse: input });
+  // 1) AJ on item answer
+  const aj = await callAJ({ item: currentItem, userResponse: input });
 
-    // 2) Orchestrator on item
-    const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
-const prompt = probeTextFromServer(data);       // <-- use server-authored probe text if present
+  // 2) Orchestrator on item
+  const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
 
-// If your UI tracks a probe prompt in state:
-setProbePrompt(prompt);
+  // 3) Record
+  setHistory((h) => [
+    ...h,
+    {
+      item_id: currentItem.item_id,
+      text: currentItem.text,
+      answer: input,
+      label: turn.final_label,
+      probe_type: turn.probe_type,
+      probe_text: (turn.probe_text || ""),   // <- log the actual sentence for debugging
+      trace: turn.trace
+    }
+  ]);
+  setLog((lines) => [...lines, ...turn.trace, "—"]);
+  setTheta({
+    mean: Number(turn.theta_mean.toFixed(2)),
+    se: Number(Math.sqrt(turn.theta_var).toFixed(2))
+  });
 
-// Show the probe UI only when there is a prompt; otherwise advance to next item
-if (prompt && prompt.length > 0) {
-  setAwaitingProbe(true);                       // your boolean to show a probe input box
-} else {
-  setAwaitingProbe(false);
-  const next = bank.items.find(it => it.item_id === data.next_item_id);
-  setCurrentItem(next);                         // however you advance to the next question
+  // 4) Prefer server-authored probe text; fall back to canned
+  const prompt = probeTextFromServer(turn);
+  const hasProbe = !!(prompt && prompt.length > 0);
+
+  if (hasProbe) {
+    setAwaitingProbe({
+      probeType: turn.probe_type,
+      prompt,                               // <-- AJ/orchestrator-authored sentence
+      pending: { aj, next_item_id: turn.next_item_id } // will re-merge after TW
+    });
+  } else {
+    // No probe → advance immediately
+    setCurrentId(turn.next_item_id || currentItem.item_id);
+  }
+
+  setInput("");
 }
+
 
     // Record
     setHistory((h) => [

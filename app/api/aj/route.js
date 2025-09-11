@@ -1,7 +1,7 @@
 // app/api/aj/route.js
 export const runtime = 'edge';
 
-import AJ_SYSTEM from '../../../lib/prompts/aj.system.js'; // ensure this is a default export
+import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js
 
 export async function POST(req) {
   try {

@@ -283,14 +283,17 @@ export default async function handler(req, res) {
     trace.push(...t3);
 
     return res.status(200).json({
-      final_label: finalLabel,
-      probe_type: probe,
-      next_item_id: next ? next.item_id : null,
-      theta_mean: SESSION.theta_mean,
-      theta_var: SESSION.theta_var,
-      coverage_counts: SESSION.coverage,
-      trace
-    });
+  final_label: finalLabel,
+  probe_type: probe.intent,   // backwards-compat
+  probe_text: probe.text,     // <-- NEW: render this in your UI
+  probe_source: probe.source || "unknown",
+  next_item_id: next ? next.item_id : null,
+  theta_mean: SESSION.theta_mean,
+  theta_var: SESSION.theta_var,
+  coverage_counts: SESSION.coverage,
+  trace
+});
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "turn error", details: String(err) });

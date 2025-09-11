@@ -1,48 +1,37 @@
 // app/api/aj/route.js
-import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js';
 export const runtime = 'edge';
-export const preferredRegion = ['iad1', 'cle1']; // closer to Ann Arbor / US East
 
-const MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+import { AJ_SYSTEM } from "../../../lib/prompts/aj.system.js";
 
 export async function POST(req) {
   try {
     const { item, userResponse, features } = await req.json();
-    if (!item?.text || typeof userResponse !== 'string') {
-      return new Response(JSON.stringify({ error: 'Bad request: missing item.text or userResponse' }), { status: 400 });
+    if (!item?.text || typeof userResponse !== "string") {
+      return new Response(JSON.stringify({ error: "Bad request: missing item.text or userResponse" }), { status: 400 });
     }
 
-    // Keep features small for latency
-    const smallFeatures = {
-      schema_id: features?.schema_id ?? null,
-      expected_list_count: features?.expected_list_count ?? null,
-      expect_direction_word: !!features?.expect_direction_word,
-      tw_type: features?.tw_type ?? null
-    };
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Missing OPENAI_API_KEY" }), { status: 500 });
+    }
 
+    // Edge runtime ⇒ use the REST fetch form
     const body = {
-      model: MODEL,
-      input: [
-        { role: "system", content: AJ_SYSTEM },
-        { role: "user", content: JSON.stringify({
-            stimulus: item.text,
-            user_response: userResponse,
-            features: smallFeatures
-        }) }
-      ],
+      model: process.env.OPENAI_MODEL || "gpt-5-mini",
       response_format: { type: "json_object" },
-      max_output_tokens: 280
+      messages: [
+        { role: "system", content: AJ_SYSTEM },
+        { role: "user", content: JSON.stringify({ stimulus: item.text, user_response: userResponse, features: features || {} }) }
+      ]
     };
 
-    const r = await fetch("https://api.openai.com/v1/responses", {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(body)
-      // Optional hard timeout:
-      //, signal: AbortSignal.timeout(6500)
     });
 
     if (!r.ok) {
@@ -50,16 +39,13 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "OpenAI call failed", details: errText.slice(0, 800) }), { status: 502 });
     }
 
-    const data = await r.json();
-    const text = data.output_text || data.choices?.[0]?.message?.content || "";
-    if (!text) {
-      return new Response(JSON.stringify({ error: "Empty AJ output", data }), { status: 502 });
-    }
-
+    const json = await r.json();
+    const text = json?.choices?.[0]?.message?.content || "";
     let payload;
-    try { payload = JSON.parse(text); }
-    catch {
-      return new Response(JSON.stringify({ error: "Non-JSON AJ output", sample: text.slice(0, 800) }), { status: 502 });
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return new Response(JSON.stringify({ error: "Model returned non-JSON", sample: text.slice(0, 800) }), { status: 502 });
     }
 
     return new Response(JSON.stringify(payload), {
@@ -67,6 +53,6 @@ export async function POST(req) {
       headers: { "Content-Type": "application/json" }
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: "AJ edge error", details: String(err) }), { status: 500 });
+    return new Response(JSON.stringify({ error: "AJ route error", details: String(err) }), { status: 500 });
   }
 }

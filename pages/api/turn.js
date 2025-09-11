@@ -18,6 +18,58 @@ const CFG = {
     "Novel": 0.0
   }
 };
+const BANNED_TOKENS = [
+  "confounder","mediator","collider","post-treatment","reverse causation",
+  "selection bias","instrumental variable","simpson","berkson"
+];
+
+const PROBE_LIBRARY = {
+  Completion: [
+    "Good start—please add one more different reason (a few words).",
+    "Thanks—give one more distinct reason (a few words)."
+  ],
+  Clarify: [
+    "Please make that more concrete (a few words).",
+    "Could you be more specific (a few words)?"
+  ],
+  Mechanism: [
+    "In one sentence, briefly explain the path from cause to result.",
+    "One sentence: how would this lead to that?"
+  ],
+  Alternative: [
+    "Give one fundamentally different explanation (a few words).",
+    "Name a second, different way the link could arise (few words)."
+  ],
+  Boundary: [
+    "Name a condition under which your conclusion would no longer hold (few words)."
+  ],
+  None: [""]
+};
+
+function passesProbeGuard(item, probe) {
+  if (!probe || probe.intent === "None") return false;
+  const t = (probe.text || "").toLowerCase();
+
+  // length & punctuation sanity
+  if (t.length === 0 || t.length > 200) return false;
+  if (!/[?.!]$/.test(t.trim())) return false;
+
+  // jargon / cueing
+  if (BANNED_TOKENS.some(tok => t.includes(tok))) return false;
+
+  // (optional) avoid over-quoting the stem
+  const stem = (item.text || "").toLowerCase();
+  const overlap = t.split(/\s+/).filter(w => stem.includes(w)).length;
+  if (overlap > 12) return false;
+
+  return true;
+}
+
+function fallbackProbe(intent) {
+  const arr = PROBE_LIBRARY[intent] || [];
+  const text = arr[Math.floor(Math.random() * arr.length)] || "";
+  return { intent, text, rationale: "library_fallback", confidence: 0.6, source: "library" };
+}
 
 // keep a simple session in memory per server instance (fine for demo)
 let SESSION = {

@@ -1,7 +1,7 @@
 // app/api/aj/route.js
 export const runtime = 'edge';
 
-import AJ_SYSTEM from '../../../lib/prompts/aj.system.js'; // if named: { AJ_SYSTEM }
+import AJ_SYSTEM from '../../../lib/prompts/aj.system.js'; // ensure this is a default export
 
 export async function POST(req) {
   try {
@@ -16,6 +16,7 @@ export async function POST(req) {
 
     const model = process.env.OPENAI_MODEL || 'gpt-5-mini';
 
+    // Responses API expects content arrays with typed blocks
     const r = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -24,18 +25,27 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model,
-        // ⬇️ NEW: ask the Responses API to format the output as JSON text
-        text: { format: 'json' },
-        max_output_tokens: 300, // correct key for Responses API
+        text: { format: 'json' },       // <-- replaces old response_format
+        max_output_tokens: 300,         // <-- correct key for Responses API
         input: [
-          { role: 'system', content: AJ_SYSTEM },
+          {
+            role: 'system',
+            content: [
+              { type: 'text', text: AJ_SYSTEM }   // <-- content array, not a string
+            ]
+          },
           {
             role: 'user',
-            content: JSON.stringify({
-              stimulus: item.text,
-              user_response: userResponse,
-              features: features || {}
-            })
+            content: [
+              {
+                type: 'input_text',
+                text: JSON.stringify({
+                  stimulus: item.text,
+                  user_response: userResponse,
+                  features: features || {}
+                })
+              }
+            ]
           }
         ]
       })

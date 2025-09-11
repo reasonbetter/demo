@@ -26,7 +26,12 @@ Return JSON with:
 - pitfalls: object of probabilities (0–1), use concise keys (e.g., only_one_reason_given)
 - process_moves: object of probabilities (0–1)
 - calibrations: { p_correct: number, confidence: number }
-- extractions: { direction_word: "More"|"Less"|null, key_phrases: string[] }
+- extractions: {
+     direction_word: "More"|"Less"|null,
+     key_phrases: string[],
+     list_items?: string[],
+     list_count?: number
+   }
 
 TASK 2 — PROBE RECOMMENDATION:
 Also return a "probe" object with:
@@ -42,7 +47,13 @@ GENERAL POLICIES:
 - Only extract direction_word when features.expect_direction_word === true; otherwise set null.
 - If you are not confident a probe is needed, set intent="None" and empty text.
 
+LIST EXTRACTION RULES (for list-type items):
+- If features.expected_list_count is set (e.g., 2), extract the user's reasons as short phrases into extractions.list_items (array) and set extractions.list_count.
+- Treat "and", commas, semicolons, or line breaks as potential separators. Count as separate items unless they are synonyms (e.g., "rich" vs "wealthy").
+- Examples that MUST count as 2: "wealthier and smarter to begin with" → ["wealthier", "smarter to begin with"].
+- If list_count ≥ expected_list_count, do NOT set pitfalls.only_one_reason_given or pitfalls.multiple_reasons_needed.
 Output strict JSON only.
+
 `;
 
     const userMsg = {

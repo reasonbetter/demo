@@ -3,31 +3,26 @@ import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
   try {
-    const url = new URL(req.url, 'http://localhost'); // base won't be used
-    const session = url.searchParams.get('session') || '';
-    const limit = Math.min(Number(url.searchParams.get('limit') || 200), 1000);
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) return res.status(500).json({ error: 'Missing BLOB_READ_WRITE_TOKEN' });
 
-    const prefix = session ? `logs/${session}/` : 'logs/';
-    const { blobs } = await list({
-      prefix,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      limit
+    const prefix = (req.query.prefix && String(req.query.prefix)) || 'rb-logs/';
+    // list returns paginated results; for demo we pull first page
+    const { blobs } = await list({ token, prefix, limit: 500 });
+
+    return res.status(200).json({
+      ok: true,
+      count: blobs.length,
+      items: blobs.map(b => ({
+        key: b.pathname || b.key || b.name, // depending on SDK version
+        size: b.size,
+        uploadedAt: b.uploadedAt || b.createdAt,
+        downloadUrl: b.downloadUrl || b.url
+      }))
     });
-
-    // newest first
-    blobs.sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
-
-    // fetch each blob's JSON (MVP; fine for a few hundred entries)
-    const events = [];
-    for (const b of blobs) {
-      const r = await fetch(b.url);
-      const j = await r.json().catch(() => null);
-      if (j) events.push(j);
-    }
-
-    res.status(200).json({ count: events.length, events });
-  } catch (e) {
-    res.status(500).json({ error: 'admin list failed', details: String(e) });
+  } catch (err) {
+    return res.status(500).json({ error: 'list failed', details: String(err) });
   }
 }

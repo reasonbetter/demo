@@ -1,74 +1,102 @@
 import { useEffect, useState } from "react";
 
 export default function Admin() {
-  const [serverLogs, setServerLogs] = useState([]);
-  const [localLogs, setLocalLogs] = useState([]);
+  const [session, setSession] = useState("");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  async function refresh() {
-    try {
-      const res = await fetch("/api/log");
-      const data = await res.json();
-      setServerLogs(data.logs || []);
-    } catch {
-      setServerLogs([]);
-    }
-    try {
-      const arr = JSON.parse(localStorage.getItem("rb_local_logs") || "[]");
-      setLocalLogs(arr);
-    } catch {
-      setLocalLogs([]);
-    }
+  async function load() {
+    setLoading(true);
+    const qs = session ? `?session=${encodeURIComponent(session)}` : "";
+    const r = await fetch(`/api/admin/logs${qs}`);
+    const data = await r.json().catch(() => ({ events: [] }));
+    setRows(data.events || []);
+    setLoading(false);
   }
 
-  function downloadLocalJSON() {
-    const blob = new Blob([JSON.stringify(localLogs, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `rb-local-logs-${Date.now()}.json`; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function clearServer() {
-    await fetch("/api/log", { method: "DELETE" });
-    refresh();
-  }
-  function clearLocal() {
-    localStorage.removeItem("rb_local_logs");
-    refresh();
-  }
-
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { load(); }, []); // load on mount
 
   return (
-    <div className="wrap">
-      <h1 className="headline">Admin — Session Logs (Demo)</h1>
-      <p className="muted">
-        Server logs are <strong>ephemeral</strong> (in‑memory) on serverless. For the demo, also collecting to localStorage on each browser.
-      </p>
-
-      <div className="row" style={{ marginBottom: 12 }}>
-        <a className="link" href="/">← Back to Demo</a>
-        <button className="btn btn-secondary" onClick={refresh}>Refresh</button>
-        <button className="btn btn-secondary" onClick={downloadLocalJSON}>Download Local JSON</button>
-        <button className="btn btn-secondary" onClick={clearServer}>Clear Server</button>
-        <button className="btn btn-secondary" onClick={clearLocal}>Clear Local</button>
+    <main style={{ maxWidth: 960, margin: "40px auto", fontFamily: "system-ui, sans-serif" }}>
+      <h1>Admin — Session Log</h1>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+        <input
+          placeholder="Filter by session id (prefix ok)"
+          value={session}
+          onChange={(e) => setSession(e.target.value)}
+          style={{ padding: "8px 10px", border: "1px solid #ccc", borderRadius: 6, width: 360 }}
+        />
+        <button onClick={load} style={{ padding: "8px 12px" }} disabled={loading}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+        <div style={{ marginLeft: "auto" }}>
+          <strong>{rows.length}</strong> events
+        </div>
       </div>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h3>Server Logs (latest {serverLogs.length})</h3>
-        <div className="debug" style={{ maxHeight: 320 }}>
-{JSON.stringify(serverLogs.slice(-500), null, 2)}
-        </div>
-      </section>
+      {rows.map((ev, i) => (
+        <AdminRow key={(ev.ts || i) + i} ev={ev} />
+      ))}
+    </main>
+  );
+}
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <h3>Local Logs (this browser)</h3>
-        <div className="debug" style={{ maxHeight: 320 }}>
-{JSON.stringify(localLogs.slice(-500), null, 2)}
-        </div>
-      </section>
+function AdminRow({ ev }) {
+  const [open, setOpen] = useState(false);
+  const ts = ev.ts || "";
+  const item = ev.item_id || "";
+  const type = ev.type || "";
+  return (
+    <div style={{ borderTop: "1px solid #eee", paddingTop: 10, marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ width: 210 }}><code>{ts}</code></div>
+        <div style={{ width: 110 }}><span style={{ background:"#eef", padding:"2px 6px", borderRadius:4 }}>{type}</span></div>
+        <div style={{ width: 140 }}>{item}</div>
+        <div style={{ flex: 1, color: "#666" }}>{ev.text || ev.probe_prompt || ""}</div>
+        <button onClick={() => setOpen(!open)} style={{ padding: "6px 10px" }}>
+          {open ? "Hide" : "View"}
+        </button>
+      </div>
 
-      <style jsx>{``}</style>
+      {open && (
+        <div style={{ marginTop: 8, display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+          <div>
+            <div><strong>User Answer</strong></div>
+            <pre style={preStyle}>{ev.user_answer || ev.probe_answer || ""}</pre>
+            {ev.aj && (<>
+              <div><strong>AJ (item)</strong></div>
+              <pre style={preStyle}>{JSON.stringify(ev.aj, null, 2)}</pre>
+            </>)}
+            {ev.twAj && (<>
+              <div><strong>AJ (probe)</strong></div>
+              <pre style={preStyle}>{JSON.stringify(ev.twAj, null, 2)}</pre>
+            </>)}
+          </div>
+          <div>
+            {ev.turn && (<>
+              <div><strong>Controller (item)</strong></div>
+              <pre style={preStyle}>{JSON.stringify(ev.turn, null, 2)}</pre>
+            </>)}
+            {ev.merged && (<>
+              <div><strong>Controller (merge)</strong></div>
+              <pre style={preStyle}>{JSON.stringify(ev.merged, null, 2)}</pre>
+            </>)}
+            {ev.trace && (<>
+              <div><strong>Trace</strong></div>
+              <pre style={preStyle}>{(ev.trace || []).join("\n")}</pre>
+            </>)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const preStyle = {
+  background: "#fafafa",
+  padding: 10,
+  borderRadius: 6,
+  maxHeight: 240,
+  overflow: "auto",
+  border: "1px solid #eee",
+};

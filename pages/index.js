@@ -165,10 +165,11 @@ await logEvent("aj_item", {
   item_id: currentItem.item_id,
   aj
 });
-    const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
-await logEvent("turn_item", {
-  item_id: currentItem.item_id,
-  turn
+    const turn = await callTurn({
+  session_id: sessionId,
+  user_tag: userTag,
+  itemId: currentItem.item_id,
+  ajMeasurement: aj
 });
     setHistory((h) => [
    ...h,
@@ -228,10 +229,12 @@ await logEvent("aj_probe", {
   aj: tw
 });
     const merged = await callTurn({
-      itemId: currentItem.item_id,
-      ajMeasurement: awaitingProbe.pending.aj,
-      twMeasurement: tw
-    });
+  session_id: sessionId,
+  user_tag: userTag,
+  itemId: currentItem.item_id,
+  ajMeasurement: awaitingProbe.pending.aj,
+  twMeasurement: tw
+});
 await logEvent("turn_merge", {
   item_id: currentItem.item_id,
   merged

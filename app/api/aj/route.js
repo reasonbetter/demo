@@ -3,6 +3,9 @@ export const runtime = 'edge';
 // lib/prompts/aj.system.js
 export const runtime = 'edge';
 import { AJ_SYSTEM } from '../../../lib/prompts/aj.system.js';
+if (typeof AJ_SYSTEM !== 'string' || AJ_SYSTEM.length < 20) {
+  throw new Error('AJ_SYSTEM is not a valid string. Check your export/import or file path.');
+}
 
 
 export async function POST(req) {

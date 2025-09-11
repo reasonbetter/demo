@@ -87,6 +87,14 @@ a:hover{text-decoration:underline}
   border:1px solid var(--border);
 }
 .btn-secondary:hover{background:#f8fafc}
+.btn.loading { position: relative; }
+.btn.loading::after{
+  content:""; width:14px; height:14px; border:2px solid rgba(255,255,255,.6);
+  border-top-color:#fff; border-radius:50%;
+  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:translateY(-50%) rotate(360deg)}}
 
 /* ---- Probe / debug / history ---- */
 .probe{

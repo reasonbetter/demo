@@ -7,7 +7,7 @@ export default function Home() {
   const [probeInput, setProbeInput] = useState("");
   const [log, setLog] = useState([]);
   const [history, setHistory] = useState([]);
-  const [awaitingProbe, setAwaitingProbe] = useState(null); // { probeType, prompt }
+  const [awaitingProbe, setAwaitingProbe] = useState(null); // { probeType, prompt, pending }
   const [theta, setTheta] = useState({ mean: 0, se: Math.sqrt(1.5) });
 
   const currentItem = useMemo(
@@ -15,74 +15,78 @@ export default function Home() {
     [currentId]
   );
 
- async function callAJ({ item, userResponse, twType = null }) {
-  try {
-    const res = await fetch("/api/aj", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        item,
-        userResponse,
-        features: {
-          schema_id: item.schema_id,
-          item_id: item.item_id,
-          family: item.family,
-          coverage_tag: item.coverage_tag,
-          band: item.band,
-          item_params: { a: item.a, b: item.b },
-          tw_type: twType
-        }
-      })
-    });
+  async function callAJ({ item, userResponse, twType = null }) {
+    try {
+      const res = await fetch("/api/aj", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          item,
+          userResponse,
+          features: {
+            schema_id: item.schema_id,
+            item_id: item.item_id,
+            family: item.family,
+            coverage_tag: item.coverage_tag,
+            band: item.band,
+            item_params: { a: item.a, b: item.b },
+            expect_direction_word: item.family.startsWith("C6"),
+            expected_list_count: item.family.startsWith("C1") ? 2 : undefined,
+            tw_type: twType
+          }
+        })
+      });
 
-    if (!res.ok) {
-      // Read raw text to see the real error returned by /api/aj
-      const text = await res.text();
-      throw new Error(`AJ HTTP ${res.status}: ${text.slice(0, 800)}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`AJ HTTP ${res.status}: ${text.slice(0, 800)}`);
+      }
+      return await res.json();
+    } catch (e) {
+      alert(`AJ error: ${e.message}`);
+      // Safe fallback so UI continues
+      return {
+        labels: { Novel: 1.0 },
+        pitfalls: {},
+        process_moves: {},
+        calibrations: { p_correct: 0.0, confidence: 0.2 },
+        extractions: { direction_word: null, key_phrases: [] },
+        probe: { intent: "None", text: "", rationale: "", confidence: 0.0 }
+      };
     }
-    return await res.json();
-  } catch (e) {
-    alert(`AJ error: ${e.message}`);
-    // Safe fallback so UI continues, but it’s why you’re seeing Mechanism every time
-    return {
-      labels: { Novel: 1.0 },
-      pitfalls: {},
-      process_moves: {},
-      calibrations: { p_correct: 0.0, confidence: 0.2 },
-      extractions: { direction_word: null, key_phrases: [] }
-    };
   }
-}
 
-
-async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
-  try {
-    const res = await fetch("/api/turn", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId, ajMeasurement, twMeasurement })
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `Turn HTTP ${res.status}`);
+  async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
+    try {
+      const res = await fetch("/api/turn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, ajMeasurement, twMeasurement })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Turn HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (e) {
+      alert(`Controller error: ${e.message}`);
+      // Minimal no-op result so UI stays responsive
+      const nextSafe =
+        bank.items.find((it) => it.item_id !== itemId)?.item_id || itemId;
+      return {
+        final_label: "Novel",
+        probe_type: "None",
+        probe_text: "",
+        next_item_id: nextSafe,
+        theta_mean: 0,
+        theta_var: 1.5,
+        coverage_counts: {},
+        trace: [`Controller error: ${e.message}`]
+      };
     }
-    return await res.json();
-  } catch (e) {
-    alert(`Controller error: ${e.message}`);
-    // Minimal no-op result so UI stays responsive
-    return {
-      final_label: "Novel",
-      probe_type: "None",
-      next_item_id: bank.items.find(it => !history?.some(h => h.item_id === it.item_id))?.item_id || itemId,
-      theta_mean: 0,
-      theta_var: 1.5,
-      coverage_counts: {},
-      trace: [`Controller error: ${e.message}`]
-    };
   }
-}
 
-
+  // Canned fallbacks for probes (used only if server didn't supply text)
   function probePromptFor(type) {
     if (type === "Mechanism")
       return "One sentence: briefly explain the mechanism that could make this result misleading.";
@@ -90,64 +94,34 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
       return "In a few words: give one different explanation for the link (not the one you already mentioned).";
     if (type === "Boundary")
       return "One sentence: name a condition where your conclusion would fail.";
+    if (type === "Completion")
+      return "Can you give one more different reason?";
+    if (type === "Clarify")
+      return "In one sentence: clarify what you meant.";
     return "";
   }
-// Prefer server-authored probe text; fall back to canned map
-function probeTextFromServer(data) {
-  const t = (data?.probe_text || "").trim();
-  if (t.length > 0) return t;            // ← use AJ/orchestrator-authored sentence
-  return probePromptFor(data?.probe_type); // ← fallback to your old map
-}
 
-async function onSubmit(e) {
-  e.preventDefault();
-  if (!input.trim()) return;
-
-  // 1) AJ on item answer
-  const aj = await callAJ({ item: currentItem, userResponse: input });
-
-  // 2) Orchestrator on item
-  const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
-
-  // 3) Record
-  setHistory((h) => [
-    ...h,
-    {
-      item_id: currentItem.item_id,
-      text: currentItem.text,
-      answer: input,
-      label: turn.final_label,
-      probe_type: turn.probe_type,
-      probe_text: (turn.probe_text || ""),   // <- log the actual sentence for debugging
-      trace: turn.trace
-    }
-  ]);
-  setLog((lines) => [...lines, ...turn.trace, "—"]);
-  setTheta({
-    mean: Number(turn.theta_mean.toFixed(2)),
-    se: Number(Math.sqrt(turn.theta_var).toFixed(2))
-  });
-
-  // 4) Prefer server-authored probe text; fall back to canned
-  const prompt = probeTextFromServer(turn);
-  const hasProbe = !!(prompt && prompt.length > 0);
-
-  if (hasProbe) {
-    setAwaitingProbe({
-      probeType: turn.probe_type,
-      prompt,                               // <-- AJ/orchestrator-authored sentence
-      pending: { aj, next_item_id: turn.next_item_id } // will re-merge after TW
-    });
-  } else {
-    // No probe → advance immediately
-    setCurrentId(turn.next_item_id || currentItem.item_id);
+  // Prefer server-authored probe text; fall back to canned map
+  function probeTextFromServer(turnPayload) {
+    const t = (turnPayload?.probe_text || "").trim();
+    if (t.length > 0) return t; // use AJ/orchestrator-authored sentence
+    return probePromptFor(turnPayload?.probe_type);
   }
 
-  setInput("");
-}
+  async function onSubmit(e) {
+    e.preventDefault();
+    if (!input.trim()) return;
 
+    // 1) AJ on item answer
+    const aj = await callAJ({ item: currentItem, userResponse: input });
 
-    // Record
+    // 2) Orchestrator on item
+    const turn = await callTurn({
+      itemId: currentItem.item_id,
+      ajMeasurement: aj
+    });
+
+    // 3) Record
     setHistory((h) => [
       ...h,
       {
@@ -156,19 +130,25 @@ async function onSubmit(e) {
         answer: input,
         label: turn.final_label,
         probe_type: turn.probe_type,
+        probe_text: (turn.probe_text || ""),
         trace: turn.trace
       }
     ]);
     setLog((lines) => [...lines, ...turn.trace, "—"]);
+    setTheta({
+      mean: Number(turn.theta_mean.toFixed(2)),
+      se: Number(Math.sqrt(turn.theta_var).toFixed(2))
+    });
 
-    setTheta({ mean: Number(turn.theta_mean.toFixed(2)), se: Number(Math.sqrt(turn.theta_var).toFixed(2)) });
+    // 4) If probe needed, use server-authored text; else move to next item
+    const prompt = probeTextFromServer(turn);
+    const hasProbe = !!(turn.probe_type && turn.probe_type !== "None" && prompt);
 
-    // 3) If probe needed, set awaitingProbe; else move to next item
-    if (turn.probe_type && turn.probe_type !== "None") {
+    if (hasProbe) {
       setAwaitingProbe({
         probeType: turn.probe_type,
-        prompt: probePromptFor(turn.probe_type),
-        pending: { aj, next_item_id: turn.next_item_id } // we will re-merge after TW
+        prompt, // AJ/orchestrator-authored sentence
+        pending: { aj, next_item_id: turn.next_item_id } // re-merge after TW
       });
     } else {
       setCurrentId(turn.next_item_id || currentItem.item_id);
@@ -181,7 +161,7 @@ async function onSubmit(e) {
     e.preventDefault();
     if (!awaitingProbe || !probeInput.trim()) return;
 
-    // 1) AJ on TW
+    // 1) AJ on transcript window (probe answer)
     const tw = await callAJ({
       item: currentItem,
       userResponse: probeInput,
@@ -196,13 +176,20 @@ async function onSubmit(e) {
     });
 
     setLog((lines) => [...lines, ...merged.trace, "—"]);
-    setTheta({ mean: Number(merged.theta_mean.toFixed(2)), se: Number(Math.sqrt(merged.theta_var).toFixed(2)) });
+    setTheta({
+      mean: Number(merged.theta_mean.toFixed(2)),
+      se: Number(Math.sqrt(merged.theta_var).toFixed(2))
+    });
     setCurrentId(merged.next_item_id || currentItem.item_id);
 
-    // record probe
+    // record probe answer on last history row
     setHistory((h) => {
       const last = h[h.length - 1];
-      const updated = { ...last, probe_answer: probeInput, probe_label: awaitingProbe.probeType };
+      const updated = {
+        ...last,
+        probe_answer: probeInput,
+        probe_label: awaitingProbe.probeType
+      };
       return [...h.slice(0, -1), updated];
     });
 

@@ -177,6 +177,27 @@ function finalizeLabelAndProbe(item, aj, schemaFeatures) {
 
   const p = fallbackProbe(intent);
   trace.push(`Fallback intent=${intent} (minimal policy).`);
+// C1 list-count guard: if user gave enough distinct reasons, suppress Completion.
+if (item.family.startsWith("C1")) {
+  const expected = 2; // our C1s expect two reasons
+  const listCount =
+    (aj.extractions?.list_count ?? (aj.extractions?.list_items?.length ?? 0));
+  const onlyCountPit = (aj.pitfalls?.only_one_reason_given || 0) >= CFG.tau_pitfall_hi
+                    || (aj.pitfalls?.multiple_reasons_needed || 0) >= CFG.tau_pitfall_hi;
+
+  if (listCount >= expected && probe === "Completion") {
+    probe = "None";
+    // Optional: soften the label if it was only missing due to count
+    if (finalLabel === "Correct_Missing" && onlyCountPit) {
+      // Don’t inflate to Correct&Complete; just drop the pitfall-driven probe.
+      // (Keeps scoring conservative but fixes UX.)
+      // If you prefer to upgrade scoring, you can set:
+      // labels["Correct&Complete"] = Math.max(labels["Correct&Complete"]||0, 0.8);
+    }
+    trace.push(`C1 list-count guard → list_count=${listCount} ≥ ${expected} (no Completion probe).`);
+  }
+}
+
   return { finalLabel, probe: p, trace };
 }
 

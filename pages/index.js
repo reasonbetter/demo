@@ -161,8 +161,15 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
     setPending(true);
 
     const aj = await callAJ({ item: currentItem, userResponse: input });
+await logEvent("aj_item", {
+  item_id: currentItem.item_id,
+  aj
+});
     const turn = await callTurn({ itemId: currentItem.item_id, ajMeasurement: aj });
-
+await logEvent("turn_item", {
+  item_id: currentItem.item_id,
+  turn
+});
     setHistory((h) => [
    ...h,
    {
@@ -215,13 +222,20 @@ async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
       userResponse: probeInput,
       twType: awaitingProbe.probeType
     });
-
+await logEvent("aj_probe", {
+  item_id: currentItem.item_id,
+  tw_type: awaitingProbe.probeType,
+  aj: tw
+});
     const merged = await callTurn({
       itemId: currentItem.item_id,
       ajMeasurement: awaitingProbe.pending.aj,
       twMeasurement: tw
     });
-
+await logEvent("turn_merge", {
+  item_id: currentItem.item_id,
+  merged
+});
     setLog((lines) => [...lines, ...merged.trace, "—"]);
     setTheta({ mean: Number(merged.theta_mean.toFixed(2)), se: Number(Math.sqrt(merged.theta_var).toFixed(2)) });
     setCurrentId(merged.next_item_id || currentItem.item_id);

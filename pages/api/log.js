@@ -1,8 +1,8 @@
 // pages/api/log.js
-import { put } from '@vercel/blob';
+import { sql } from '../../lib/db';
 
 export default async function handler(req, res) {
-  // allow HEAD/OPTIONS/GET so they don’t 405
+  // Make the route tolerant of non-POST method checks to avoid noisy 405s
   if (req.method === 'HEAD' || req.method === 'OPTIONS' || req.method === 'GET') {
     res.setHeader('Allow', 'GET,HEAD,OPTIONS,POST');
     return res.status(200).json({ ok: true });
@@ -14,23 +14,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!token) return res.status(500).json({ error: 'Missing BLOB_READ_WRITE_TOKEN' });
+    // Create a minimal logs table if it doesn't exist
+    await sql`
+      CREATE TABLE IF NOT EXISTS logs (
+        id          BIGSERIAL PRIMARY KEY,
+        ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        session_id  TEXT,
+        user_tag    TEXT,
+        type        TEXT,
+        payload     JSONB
+      );
+    `;
 
     const entry = req.body || {};
-    if (!entry.ts) entry.ts = new Date().toISOString();
+    const ts = entry.ts || new Date().toISOString();
+    const { session_id = null, user_tag = null, type = null, ...rest } = entry;
+    const payload = JSON.stringify(rest ?? {});
 
-    const day = entry.ts.slice(0, 10); // YYYY-MM-DD
-    const sid = entry.session_id || 'anon';
-    const key = `rb-logs/${day}/${sid}/${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
+    const rows = await sql`
+      INSERT INTO logs (ts, session_id, user_tag, type, payload)
+      VALUES (${ts}, ${session_id}, ${user_tag}, ${type}, ${payload}::jsonb)
+      RETURNING id, ts, session_id, user_tag, type;
+    `;
 
-    const { url } = await put(
-      key,
-      JSON.stringify(entry, null, 2),
-      { access: 'private', token, contentType: 'application/json' }
-    );
-
-    return res.status(200).json({ ok: true, url, key });
+    return res.status(200).json({ ok: true, inserted: rows[0] });
   } catch (err) {
     return res.status(500).json({ error: 'log write failed', details: String(err) });
   }

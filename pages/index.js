@@ -124,27 +124,31 @@ export default function Home() {
     }
   }
 
-async function callTurn({ itemId, ajMeasurement, twMeasurement = null }) {
+async function callTurn({ sessionId, userTag, itemId, ajMeasurement, twMeasurement = null }) {
   try {
     const res = await fetch("/api/turn", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId, ajMeasurement, twMeasurement })
+      body: JSON.stringify({
++       session_id: sessionId,       // ← send session id
++       user_tag: userTag || null,   // ← optional, handy for admin logs
+        itemId,
+        ajMeasurement,
+        twMeasurement
+      })
     });
     if (!res.ok) {
-      const text = await res.text(); // capture the real error
-      throw new Error(text);
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || `Turn HTTP ${res.status}`);
     }
     return await res.json();
   } catch (e) {
     alert(`Controller error: ${e.message}`);
-    // ... your existing safe fallback ...
+    // Minimal no-op result so UI stays responsive
     return {
       final_label: "Novel",
       probe_type: "None",
-      probe_text: "",
-      next_item_id:
-        bank.items.find((it) => it.item_id !== itemId)?.item_id || itemId,
+      next_item_id: bank.items.find(it => !history?.some(h => h.item_id === it.item_id))?.item_id || itemId,
       theta_mean: 0,
       theta_var: 1.5,
       coverage_counts: {},

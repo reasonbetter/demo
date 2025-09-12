@@ -170,8 +170,8 @@ await logEvent("aj_item", {
   aj
 });
     const turn = await callTurn({
-  session_id: sessionId,
-  user_tag: userTag,
+  session_id,
+  user_tag,
   itemId: currentItem.item_id,
   ajMeasurement: aj
 });
@@ -233,8 +233,8 @@ await logEvent("aj_probe", {
   aj: tw
 });
     const merged = await callTurn({
-  session_id: sessionId,
-  user_tag: userTag,
+  session_id,
+  user_tag,
   itemId: currentItem.item_id,
   ajMeasurement: awaitingProbe.pending.aj,
   twMeasurement: tw
@@ -321,7 +321,9 @@ await logEvent("turn_merge", {
               autoFocus
             />
             <div className="row" style={{ marginTop: 10 }}>
-              <button type="submit" className="btn" disabled={pending}>Submit</button>
+              <button type="submit" className="btn" disabled={!sessionId || pending}>
+  Submit
+</button>
               <button type="button" className="btn btn-secondary" onClick={() => setShowDebug((s) => !s)}>
                 {showDebug ? "Hide debug" : "Show debug"}
               </button>
@@ -342,7 +344,7 @@ await logEvent("turn_merge", {
               placeholder="One sentence"
             />
             <div className="row" style={{ marginTop: 10 }}>
-              <button type="submit" className="btn" disabled={pending}>Submit follow‑up</button>
+              <button type="submit" className="btn" disabled={!sessionId || pending}>Submit follow‑up</button>
               <button type="button" className="btn btn-secondary" onClick={() => setShowDebug((s) => !s)}>
                 {showDebug ? "Hide debug" : "Show debug"}
               </button>
@@ -360,7 +362,7 @@ await logEvent("turn_merge", {
 
       <section style={{ marginTop: 24 }}>
         <h3>History</h3>
-        + {history.map((h, i) => (
+         {history.map((h, i) => (
    <HistoryRow key={h.item_id + ':' + i} item={h} />
  ))}
       </section>

@@ -130,8 +130,8 @@ async function callTurn({ sessionId, userTag, itemId, ajMeasurement, twMeasureme
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-+       session_id: sessionId,       // ← send session id
-+       user_tag: userTag || null,   // ← optional, handy for admin logs
+       session_id: sessionId,       // ← send session id
+       user_tag: userTag || null,   // ← optional, handy for admin logs
         itemId,
         ajMeasurement,
         twMeasurement

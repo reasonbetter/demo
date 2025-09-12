@@ -170,7 +170,7 @@ await logEvent("aj_item", {
   aj
 });
     const turn = await callTurn({
-  session_id,
+  session_Id,
   user_tag,
   itemId: currentItem.item_id,
   ajMeasurement: aj
@@ -233,7 +233,7 @@ await logEvent("aj_probe", {
   aj: tw
 });
     const merged = await callTurn({
-  session_id,
+  session_Id,
   user_tag,
   itemId: currentItem.item_id,
   ajMeasurement: awaitingProbe.pending.aj,
